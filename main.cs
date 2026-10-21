@@ -23,3 +23,9 @@ public void Reset() {
     byte ProgramCounterHigh = Read(0xFFFD); // high byte
     ProgramCounter = (ushort)((ProgramCounterHigh * 0x100) + ProgramCounterLow);
 }
+
+private void button1_Click(object sender, EventArgs e) {
+    Emulator emulator = new Emulator();
+    emulator.filepath = @"/Users/damian/Programming/YANESEmu/1_Example.nes";
+    emulator.Reset();
+}
