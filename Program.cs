@@ -2,15 +2,18 @@ using System;
 using System.IO;
 
 public class Emulator {
-    public ushort ProgramCounter;
-    public byte A;
-    public byte X;
-    public byte Y;
+    ushort ProgramCounter;
+    byte A;
+    byte X;
+    byte Y;
 
-    public byte[] RAM = new byte[0x800];
-    public byte[] ROM = new byte[0x8000];
+    bool CPU_Halted = false;
 
-    public byte Read(ushort addr) {
+
+    byte[] RAM = new byte[0x800];
+    byte[] ROM = new byte[0x8000];
+
+    byte Read(ushort addr) {
         if (addr < 0x800) {
             return RAM[addr];
         }
@@ -21,7 +24,12 @@ public class Emulator {
         return 0;
     }
 
-    public void Reset(string filepath) {
+    void Run() {
+        while (!CPU_Halted) {
+            Emulate_CPU();
+        }
+    }
+    void Reset(string filepath) {
         if (!File.Exists(filepath)) {
             Console.WriteLine($"Error: File not found at {filepath}");
             return;
@@ -43,13 +51,12 @@ public class Emulator {
         byte programCounterHigh = Read(0xFFFD);       
         ProgramCounter = (ushort)((programCounterHigh * 0x100) + programCounterLow);
     }
-}
-
-class Program {
-    static void Main(string[] args) {
-        Emulator emulator = new Emulator();
-        string path = "/Users/damian/Programming/YANESEmu/1_Example.nes";        
-        emulator.Reset(path);
-        Console.WriteLine($"Emulator reset successfully. PC: 0x{emulator.ProgramCounter:X4}");
+    class Program {
+        static void Main(string[] args) {
+            Emulator emulator = new Emulator();
+            string path = "/Users/damian/Programming/YANESEmu/1_Example.nes";        
+            emulator.Reset(path);
+            Console.WriteLine($"Emulator reset successfully. PC: 0x{emulator.ProgramCounter:X4}");
+        }
     }
 }
