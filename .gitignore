@@ -1,2 +1,5 @@
 *.nes
+*.DS_Store
 /.idea
+/obj
+/bin
