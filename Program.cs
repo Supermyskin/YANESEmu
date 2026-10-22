@@ -7,7 +7,9 @@ public class Emulator
     byte A;
     byte X;
     byte Y;
+    byte opcode;
 
+    int cycle = 0; //CPU Cycles for when dealing with PPU X opcodes
     bool CPU_Halted = false;
 
 
@@ -30,20 +32,36 @@ public class Emulator
 
     void Emulate_CPU()
     {
-        byte opcode = Read(ProgramCounter);
-        ProgramCounter++;
-        switch (opcode) // The humble beginnings of a thousand-line switch statement.
+        if (cycle == 0)
         {
-            case 0x02: //HLT
-                break;
-            case 0xA0: //LDY Immediate
-                break;
-            case 0xA2: //LDX Immediate
-                break;
-            case 0xA9: //LDX Immediate
-                break;
-            default: //Unknown opcode???
-                break;
+            byte opcode = Read(ProgramCounter);
+            ProgramCounter++;
+            cycle++;
+        }
+        else {
+            switch (opcode) // The humble beginnings of a thousand-line switch statement.
+            {
+                case 0x02: //HLT
+                    CPU_Halted = true;
+                    break;
+                case 0xA0: //LDY Immediate
+                    Y = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycle = 0;
+                    break;
+                case 0xA2: //LDX Immediate
+                    X = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycle = 0;
+                    break;
+                case 0xA9: //LDA Immediate
+                    A = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycle = 0; // Boom ready to start the next opcode
+                    break;
+                default: //Unknown opcode???
+                    break;
+            }
         }
     }
 
@@ -88,6 +106,7 @@ public class Emulator
             Emulator emulator = new Emulator();
             string path = "/Users/damian/Programming/YANESEmu/1_Example.nes";
             emulator.Reset(path);
+            emulator.Run();
             Console.WriteLine($"Emulator reset successfully. PC: 0x{emulator.ProgramCounter:X4}");
         }
     }
