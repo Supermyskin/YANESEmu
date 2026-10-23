@@ -9,7 +9,7 @@ public class Emulator
     byte Y;
     byte opcode;
 
-    int cycle = 0; //CPU Cycles for when dealing with PPU X opcodes
+    int cycles = 0; //CPU Cycles for when dealing with PPU X opcodes
     bool CPU_Halted = false;
 
 
@@ -40,11 +40,11 @@ public class Emulator
 
     void Emulate_CPU()
     {
-        if (cycle == 0)
+        if (cycles == 0)
         {
             opcode = Read(ProgramCounter);
             ProgramCounter++;
-            cycle++;
+            cycles++;
         }
         else {
             switch (opcode) // The humble beginnings of a thousand-line switch statement.
@@ -55,19 +55,44 @@ public class Emulator
                 case 0xA0: //LDY Immediate
                     Y = Read(ProgramCounter);
                     ProgramCounter++;
-                    cycle = 0;
+                    cycles = 0;
                     break;
                 case 0xA2: //LDX Immediate
                     X = Read(ProgramCounter);
                     ProgramCounter++;
-                    cycle = 0;
+                    cycles = 0;
                     break;
                 case 0xA9: //LDA Immediate
                     A = Read(ProgramCounter);
                     ProgramCounter++;
-                    cycle = 0; // Boom ready to start the next opcode
+                    cycles = 0; // Boom ready to start the next opcode
                     break;
                 case 0x85: //STA Zero Page
+                    byte Temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(Temp, A);
+                    cycles = 3;
+                    break;
+                case 0x8D: //STA Absolute
+                    byte Temp_Low = Read(ProgramCounter);
+                    ProgramCounter++;
+                    byte Temp_High = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write((ushort)(Temp_High*256 + Temp_Low), A);
+                    break;
+                case 0xA5: // LDA Zero Page
+                    Temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    A = Read(Temp);
+                    cycles = 3;                    
+                    break;
+                case 0xAD: // LDA Absolute
+                    Temp_Low = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Temp_High = Read(ProgramCounter);
+                    ProgramCounter++;
+                    A = Read((ushort)(Temp_High * 256 + Temp_Low));
+                    cycles = 4;                    
                     break;
                 default: //Unknown opcode???
                     break;
