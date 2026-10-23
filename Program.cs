@@ -12,6 +12,13 @@ public class Emulator
     int cycles = 0; //CPU Cycles for when dealing with PPU X opcodes
     bool CPU_Halted = false;
 
+    bool flag_Carry;
+    bool flag_Zero;
+    bool flag_InterruptDisable;
+    bool flag_Decimal;
+    bool flag_Overflow;
+    bool flag_Negative;
+
 
     byte[] RAM = new byte[0x800];
     byte[] ROM = new byte[0x8000];
@@ -54,16 +61,22 @@ public class Emulator
                     break;
                 case 0xA0: //LDY Immediate
                     Y = Read(ProgramCounter);
+                    flag_Zero = Y == 0;
+                    flag_Negative = Y > 127;
                     ProgramCounter++;
                     cycles = 0;
                     break;
                 case 0xA2: //LDX Immediate
                     X = Read(ProgramCounter);
+                    flag_Zero = X == 0;
+                    flag_Negative = X > 127;
                     ProgramCounter++;
                     cycles = 0;
                     break;
                 case 0xA9: //LDA Immediate
                     A = Read(ProgramCounter);
+                    flag_Zero = A == 0;
+                    flag_Negative = A > 127;
                     ProgramCounter++;
                     cycles = 0; // Boom ready to start the next opcode
                     break;
@@ -161,6 +174,7 @@ public class Emulator
             Array.Copy(fileBytes, 0x10, ROM, 0, Math.Min(prgSize, ROM.Length));
         }
 
+        flag_InterruptDisable = true;
         byte programCounterLow = Read(0xFFFC);
         byte programCounterHigh = Read(0xFFFD);
         ProgramCounter = (ushort)((programCounterHigh * 0x100) + programCounterLow);
