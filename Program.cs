@@ -30,11 +30,19 @@ public class Emulator
         return 0;
     }
 
+    void Write(ushort addr, byte value)
+    {
+        if (addr < 0x2000)
+        {
+            RAM[addr % 0x800] = value;
+        }
+    }
+
     void Emulate_CPU()
     {
         if (cycle == 0)
         {
-            byte opcode = Read(ProgramCounter);
+            opcode = Read(ProgramCounter);
             ProgramCounter++;
             cycle++;
         }
@@ -58,6 +66,8 @@ public class Emulator
                     A = Read(ProgramCounter);
                     ProgramCounter++;
                     cycle = 0; // Boom ready to start the next opcode
+                    break;
+                case 0x85: //STA Zero Page
                     break;
                 default: //Unknown opcode???
                     break;
@@ -99,7 +109,7 @@ public class Emulator
         byte programCounterHigh = Read(0xFFFD);
         ProgramCounter = (ushort)((programCounterHigh * 0x100) + programCounterLow);
     }
-    class Program
+    class Program 
     {
         static void Main(string[] args)
         {
@@ -107,7 +117,10 @@ public class Emulator
             string path = "/Users/damian/Programming/YANESEmu/1_Example.nes";
             emulator.Reset(path);
             emulator.Run();
-            Console.WriteLine($"Emulator reset successfully. PC: 0x{emulator.ProgramCounter:X4}");
+            Console.WriteLine($"Emulator halted. Final PC: 0x{emulator.ProgramCounter:X4}");
+            Console.WriteLine($"A : 0x{emulator.A:X2} ({emulator.A})");
+            Console.WriteLine($"X : 0x{emulator.X:X2} ({emulator.X})");
+            Console.WriteLine($"Y : 0x{emulator.Y:X2} ({emulator.Y})");
         }
     }
 }
