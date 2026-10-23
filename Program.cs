@@ -94,6 +94,37 @@ public class Emulator
                     A = Read((ushort)(Temp_High * 256 + Temp_Low));
                     cycles = 4;                    
                     break;
+                case 0x86: // STX Zero Page
+                    Temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(Temp, X);
+                    cycles = 3;
+                    break;
+
+                case 0x8E: // STX Absolute
+                    Temp_Low = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Temp_High = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write((ushort)(Temp_High * 256 + Temp_Low), X);
+                    cycles = 4;
+                    break;
+
+                case 0x84: // STY Zero Page
+                    Temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(Temp, Y);
+                    cycles = 3;
+                    break;
+
+                case 0x8C: // STY Absolute
+                    Temp_Low = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Temp_High = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write((ushort)(Temp_High * 256 + Temp_Low), Y);
+                    cycles = 4;
+                    break;
                 default: //Unknown opcode???
                     break;
             }
