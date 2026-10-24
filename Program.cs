@@ -45,7 +45,6 @@ public class Emulator
 
     public void Emulate_CPU()
     {
-        ushort currentPC = ProgramCounter;
         opcode = Read(ProgramCounter);
         ProgramCounter++;
 
@@ -166,8 +165,6 @@ public class Emulator
                 CPU_Halted = true;
                 break;
         }
-
-        Console.WriteLine($"[PC: 0x{currentPC:X4}] Op: 0x{opcode:X2} | A: 0x{A:X2} X: 0x{X:X2} Y: 0x{Y:X2}");
     }
 
     public void Run()
@@ -218,7 +215,7 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/1_Example.nes";
+            string path = "/Users/damian/Programming/YANESEmu/2_ReadWrite.nes";
             
             emulator.Reset(path);
             emulator.Run();
