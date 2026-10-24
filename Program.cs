@@ -3,27 +3,25 @@ using System.IO;
 
 public class Emulator
 {
-    ushort ProgramCounter;
-    byte A;
-    byte X;
-    byte Y;
-    byte opcode;
+    public ushort ProgramCounter;
+    public byte A;
+    public byte X;
+    public byte Y;
+    public byte opcode;
 
-    int cycles = 0; //CPU Cycles for when dealing with PPU X opcodes
-    bool CPU_Halted = false;
+    public bool CPU_Halted = false;
 
-    bool flag_Carry;
-    bool flag_Zero;
-    bool flag_InterruptDisable;
-    bool flag_Decimal;
-    bool flag_Overflow;
-    bool flag_Negative;
+    public bool flag_Carry;
+    public bool flag_Zero;
+    public bool flag_InterruptDisable;
+    public bool flag_Decimal;
+    public bool flag_Overflow;
+    public bool flag_Negative;
 
+    public byte[] RAM = new byte[0x800];
+    public byte[] ROM = new byte[0x8000];
 
-    byte[] RAM = new byte[0x800];
-    byte[] ROM = new byte[0x8000];
-
-    byte Read(ushort addr)
+    public byte Read(ushort addr)
     {
         if (addr < 0x800)
         {
@@ -37,7 +35,7 @@ public class Emulator
         return 0;
     }
 
-    void Write(ushort addr, byte value)
+    public void Write(ushort addr, byte value)
     {
         if (addr < 0x2000)
         {
@@ -45,113 +43,142 @@ public class Emulator
         }
     }
 
-    void Emulate_CPU()
+    public void Emulate_CPU()
     {
-        if (cycles == 0)
+        ushort currentPC = ProgramCounter;
+        opcode = Read(ProgramCounter);
+        ProgramCounter++;
+
+        switch (opcode)
         {
-            opcode = Read(ProgramCounter);
-            ProgramCounter++;
-            cycles++;
-        }
-        else {
-            switch (opcode) // The humble beginnings of a thousand-line switch statement.
-            {
-                case 0x02: //HLT
-                    CPU_Halted = true;
-                    break;
-                case 0xA0: //LDY Immediate
+            case 0x02:
+                CPU_Halted = true;
+                break;
+
+            case 0xA0:
+                {
                     Y = Read(ProgramCounter);
-                    flag_Zero = Y == 0;
-                    flag_Negative = Y > 127;
+                    flag_Zero = (Y == 0);
+                    flag_Negative = (Y & 0x80) != 0;
                     ProgramCounter++;
-                    cycles = 0;
-                    break;
-                case 0xA2: //LDX Immediate
+                }
+                break;
+
+            case 0xA2:
+                {
                     X = Read(ProgramCounter);
-                    flag_Zero = X == 0;
-                    flag_Negative = X > 127;
+                    flag_Zero = (X == 0);
+                    flag_Negative = (X & 0x80) != 0;
                     ProgramCounter++;
-                    cycles = 0;
-                    break;
-                case 0xA9: //LDA Immediate
+                }
+                break;
+
+            case 0xA9:
+                {
                     A = Read(ProgramCounter);
-                    flag_Zero = A == 0;
-                    flag_Negative = A > 127;
+                    flag_Zero = (A == 0);
+                    flag_Negative = (A & 0x80) != 0;
                     ProgramCounter++;
-                    cycles = 0; // Boom ready to start the next opcode
-                    break;
-                case 0x85: //STA Zero Page
-                    byte Temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(Temp, A);
-                    cycles = 3;
-                    break;
-                case 0x8D: //STA Absolute
-                    byte Temp_Low = Read(ProgramCounter);
-                    ProgramCounter++;
-                    byte Temp_High = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write((ushort)(Temp_High*256 + Temp_Low), A);
-                    break;
-                case 0xA5: // LDA Zero Page
-                    Temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    A = Read(Temp);
-                    cycles = 3;                    
-                    break;
-                case 0xAD: // LDA Absolute
-                    Temp_Low = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Temp_High = Read(ProgramCounter);
-                    ProgramCounter++;
-                    A = Read((ushort)(Temp_High * 256 + Temp_Low));
-                    cycles = 4;                    
-                    break;
-                case 0x86: // STX Zero Page
-                    Temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(Temp, X);
-                    cycles = 3;
-                    break;
+                }
+                break;
 
-                case 0x8E: // STX Absolute
-                    Temp_Low = Read(ProgramCounter);
+            case 0x85:
+                {
+                    byte temp = Read(ProgramCounter);
                     ProgramCounter++;
-                    Temp_High = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write((ushort)(Temp_High * 256 + Temp_Low), X);
-                    cycles = 4;
-                    break;
+                    Write(temp, A);
+                }
+                break;
 
-                case 0x84: // STY Zero Page
-                    Temp = Read(ProgramCounter);
+            case 0x8D:
+                {
+                    byte tempLow = Read(ProgramCounter);
                     ProgramCounter++;
-                    Write(Temp, Y);
-                    cycles = 3;
-                    break;
+                    byte tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    Write(targetAddr, A);
+                }
+                break;
 
-                case 0x8C: // STY Absolute
-                    Temp_Low = Read(ProgramCounter);
+            case 0xA5:
+                {
+                    byte temp = Read(ProgramCounter);
                     ProgramCounter++;
-                    Temp_High = Read(ProgramCounter);
+                    A = Read(temp);
+                    flag_Zero = (A == 0);
+                    flag_Negative = (A & 0x80) != 0;
+                }
+                break;
+
+            case 0xAD:
+                {
+                    byte tempLow = Read(ProgramCounter);
                     ProgramCounter++;
-                    Write((ushort)(Temp_High * 256 + Temp_Low), Y);
-                    cycles = 4;
-                    break;
-                default: //Unknown opcode???
-                    break;
-            }
+                    byte tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    A = Read(targetAddr);
+                    flag_Zero = (A == 0);
+                    flag_Negative = (A & 0x80) != 0;
+                }
+                break;
+
+            case 0x86:
+                {
+                    byte temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(temp, X);
+                }
+                break;
+
+            case 0x8E:
+                {
+                    byte tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    byte tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    Write(targetAddr, X);
+                }
+                break;
+
+            case 0x84:
+                {
+                    byte temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(temp, Y);
+                }
+                break;
+
+            case 0x8C:
+                {
+                    byte tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    byte tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    Write(targetAddr, Y);
+                }
+                break;
+
+            default:
+                CPU_Halted = true;
+                break;
         }
+
+        Console.WriteLine($"[PC: 0x{currentPC:X4}] Op: 0x{opcode:X2} | A: 0x{A:X2} X: 0x{X:X2} Y: 0x{Y:X2}");
     }
 
-    void Run()
+    public void Run()
     {
         while (!CPU_Halted)
         {
             Emulate_CPU();
         }
     }
-    void Reset(string filepath)
+
+    public void Reset(string filepath)
     {
         if (!File.Exists(filepath))
         {
@@ -175,22 +202,34 @@ public class Emulator
         }
 
         flag_InterruptDisable = true;
-        byte programCounterLow = Read(0xFFFC);
-        byte programCounterHigh = Read(0xFFFD);
-        ProgramCounter = (ushort)((programCounterHigh * 0x100) + programCounterLow);
+        
+        byte pcLow = Read(0xFFFC);
+        byte pcHigh = Read(0xFFFD);
+        ProgramCounter = (ushort)((pcHigh * 0x100) + pcLow);
+
+        if (ProgramCounter == 0x0000 || ProgramCounter == 0xFFFF)
+        {
+            ProgramCounter = 0x8000;
+        }
     }
+
     class Program 
     {
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
             string path = "/Users/damian/Programming/YANESEmu/1_Example.nes";
+            
             emulator.Reset(path);
             emulator.Run();
+            
             Console.WriteLine($"Emulator halted. Final PC: 0x{emulator.ProgramCounter:X4}");
             Console.WriteLine($"A : 0x{emulator.A:X2} ({emulator.A})");
             Console.WriteLine($"X : 0x{emulator.X:X2} ({emulator.X})");
             Console.WriteLine($"Y : 0x{emulator.Y:X2} ({emulator.Y})");
+            Console.WriteLine($"RAM[0x00] = 0x{emulator.RAM[0x00]:X2}");
+            Console.WriteLine($"RAM[0x01] = 0x{emulator.RAM[0x01]:X2}");
+            Console.WriteLine($"RAM[0x02] = 0x{emulator.RAM[0x02]:X2}");
         }
     }
 }
