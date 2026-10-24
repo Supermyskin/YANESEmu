@@ -8,6 +8,7 @@ public class Emulator
     public byte X;
     public byte Y;
     public byte opcode;
+    public int cycles;
 
     public bool CPU_Halted = false;
 
@@ -45,109 +46,144 @@ public class Emulator
 
     public void Emulate_CPU()
     {
-        opcode = Read(ProgramCounter);
-        ProgramCounter++;
         byte temp;
         byte tempLow;
         byte tempHigh;
         ushort targetAddr;
+        int signedVal;
+        if (cycles == 0) {
+            opcode = Read(ProgramCounter);
+            ProgramCounter++;
+            cycles++;
+        }
+        else {
+            switch (opcode)
+            {
+                case 0x02:
+                    CPU_Halted = true;
+                    cycles = 0;
+                    break;
 
-        switch (opcode)
-        {
-            case 0x02:
-                CPU_Halted = true;
-                break;
+                case 0xA0: // LDY Immediate
+                    Y = Read(ProgramCounter);
+                    flag_Zero = (Y == 0);
+                    flag_Negative = (Y & 0x80) != 0;
+                    ProgramCounter++;
+                    cycles = 2;
+                    break;
 
-            case 0xA0:
-                Y = Read(ProgramCounter);
-                flag_Zero = (Y == 0);
-                flag_Negative = (Y & 0x80) != 0;
-                ProgramCounter++;
-                break;
+                case 0xA2: // LDX Immediate
+                    X = Read(ProgramCounter);
+                    flag_Zero = (X == 0);
+                    flag_Negative = (X & 0x80) != 0;
+                    ProgramCounter++;
+                    cycles = 2;
+                    break;
 
-            case 0xA2:
-                X = Read(ProgramCounter);
-                flag_Zero = (X == 0);
-                flag_Negative = (X & 0x80) != 0;
-                ProgramCounter++;
-                break;
+                case 0xA9: // LDA Immediate
+                    A = Read(ProgramCounter);
+                    flag_Zero = (A == 0);
+                    flag_Negative = (A & 0x80) != 0;
+                    ProgramCounter++;
+                    cycles = 2;
+                    break;
 
-            case 0xA9:
-                A = Read(ProgramCounter);
-                flag_Zero = (A == 0);
-                flag_Negative = (A & 0x80) != 0;
-                ProgramCounter++;
-                break;
+                case 0x85: // STA Zero Page
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(temp, A);
+                    cycles = 3;
+                    break;
 
-            case 0x85:
-                temp = Read(ProgramCounter);
-                ProgramCounter++;
-                Write(temp, A);
-                break;
+                case 0x8D: // STA Absolute
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    Write(targetAddr, A);
+                    cycles = 4;
+                    break;
 
-            case 0x8D:
-                tempLow = Read(ProgramCounter);
-                ProgramCounter++;
-                tempHigh = Read(ProgramCounter);
-                ProgramCounter++;
-                targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                Write(targetAddr, A);
-                break;
+                case 0xA5: // LDA Zero Page
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    A = Read(temp);
+                    flag_Zero = (A == 0);
+                    flag_Negative = (A & 0x80) != 0;
+                    cycles = 3;
+                    break;
 
-            case 0xA5:
-                temp = Read(ProgramCounter);
-                ProgramCounter++;
-                A = Read(temp);
-                flag_Zero = (A == 0);
-                flag_Negative = (A & 0x80) != 0;
-                break;
+                case 0xAD: // LDA Absolute
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    A = Read(targetAddr);
+                    flag_Zero = (A == 0);
+                    flag_Negative = (A & 0x80) != 0;
+                    cycles = 4;
+                    break;
 
-            case 0xAD:
-                tempLow = Read(ProgramCounter);
-                ProgramCounter++;
-                tempHigh = Read(ProgramCounter);
-                ProgramCounter++;
-                targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                A = Read(targetAddr);
-                flag_Zero = (A == 0);
-                flag_Negative = (A & 0x80) != 0;
-                break;
+                case 0x86: // STX Zero Page
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(temp, X);
+                    cycles = 3;
+                    break;
 
-            case 0x86:
-                temp = Read(ProgramCounter);
-                ProgramCounter++;
-                Write(temp, X);
-                break;
+                case 0x8E: // STX Absolute
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    Write(targetAddr, X);
+                    cycles = 4;
+                    break;
 
-            case 0x8E:
-                tempLow = Read(ProgramCounter);
-                ProgramCounter++;
-                tempHigh = Read(ProgramCounter);
-                ProgramCounter++;
-                targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                Write(targetAddr, X);
-                break;
+                case 0x84: // STY Zero Page
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    Write(temp, Y);
+                    cycles = 3;
+                    break;
 
-            case 0x84:
-                temp = Read(ProgramCounter);
-                ProgramCounter++;
-                Write(temp, Y);
-                break;
+                case 0x8C: // STY Absolute
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    Write(targetAddr, Y);
+                    cycles = 4;
+                    break;
 
-            case 0x8C:
-                tempLow = Read(ProgramCounter);
-                ProgramCounter++;
-                tempHigh = Read(ProgramCounter);
-                ProgramCounter++;
-                targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                Write(targetAddr, Y);
-                break;
+                case 0xD0: // BNE
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycles = 2;
+                    if (!flag_Zero)
+                    {
+                        cycles++;
+                        signedVal = temp;
+                        if (signedVal > 127)
+                        {
+                            signedVal -= 256;
+                        }
+                        ProgramCounter = (ushort)(ProgramCounter+signedVal);
+                    }
+                    break;
 
-            default:
-                CPU_Halted = true;
-                break;
+                default:
+                    CPU_Halted = true;
+                    cycles = 0;
+                    break;
+            }
         }
     }
+
     public void Run()
     {
         while (!CPU_Halted)
