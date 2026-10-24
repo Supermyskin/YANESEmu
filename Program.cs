@@ -22,11 +22,17 @@ public class Emulator
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
 
+    private byte temp;
+    private byte tempLow;
+    private byte tempHigh;
+    private ushort targetAddr;
+    private ushort tempPC;
+
     public byte Read(ushort addr)
     {
-        if (addr < 0x800)
+        if (addr < 0x2000)
         {
-            return RAM[addr];
+            return RAM[addr % 0x800];
         }
         if (addr >= 0x8000)
         {
@@ -44,143 +50,307 @@ public class Emulator
         }
     }
 
+    private void SetZeroNegative(byte value)
+    {
+        flag_Zero = (value == 0);
+        flag_Negative = (value & 0x80) != 0;
+    }
+
+    private bool BranchCondition()
+    {
+        switch (opcode)
+        {
+            case 0x10: // BPL
+                return !flag_Negative;
+
+            case 0x30: // BMI
+                return flag_Negative;
+
+            case 0x50: // BVC
+                return !flag_Overflow;
+
+            case 0x70: // BVS
+                return flag_Overflow;
+
+            case 0x90: // BCC
+                return !flag_Carry;
+
+            case 0xB0: // BCS
+                return flag_Carry;
+
+            case 0xD0: // BNE
+                return !flag_Zero;
+
+            case 0xF0: // BEQ
+                return flag_Zero;
+
+            default:
+                return false;
+        }
+    }
+
     public void Emulate_CPU()
     {
-        byte temp;
-        byte tempLow;
-        byte tempHigh;
-        ushort targetAddr;
         int signedVal;
-        if (cycles == 0) {
+
+        if (CPU_Halted)
+        {
+            return;
+        }
+
+        if (cycles == 0)
+        {
             opcode = Read(ProgramCounter);
             ProgramCounter++;
-            cycles++;
-        }
-        else {
-            switch (opcode)
+            cycles = 1;
+
+            if (opcode == 0x02)
             {
-                case 0x02:
-                    CPU_Halted = true;
-                    cycles = 0;
-                    break;
-
-                case 0xA0: // LDY Immediate
-                    Y = Read(ProgramCounter);
-                    flag_Zero = (Y == 0);
-                    flag_Negative = (Y & 0x80) != 0;
-                    ProgramCounter++;
-                    cycles = 2;
-                    break;
-
-                case 0xA2: // LDX Immediate
-                    X = Read(ProgramCounter);
-                    flag_Zero = (X == 0);
-                    flag_Negative = (X & 0x80) != 0;
-                    ProgramCounter++;
-                    cycles = 2;
-                    break;
-
-                case 0xA9: // LDA Immediate
-                    A = Read(ProgramCounter);
-                    flag_Zero = (A == 0);
-                    flag_Negative = (A & 0x80) != 0;
-                    ProgramCounter++;
-                    cycles = 2;
-                    break;
-
-                case 0x85: // STA Zero Page
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(temp, A);
-                    cycles = 3;
-                    break;
-
-                case 0x8D: // STA Absolute
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    Write(targetAddr, A);
-                    cycles = 4;
-                    break;
-
-                case 0xA5: // LDA Zero Page
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    A = Read(temp);
-                    flag_Zero = (A == 0);
-                    flag_Negative = (A & 0x80) != 0;
-                    cycles = 3;
-                    break;
-
-                case 0xAD: // LDA Absolute
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    A = Read(targetAddr);
-                    flag_Zero = (A == 0);
-                    flag_Negative = (A & 0x80) != 0;
-                    cycles = 4;
-                    break;
-
-                case 0x86: // STX Zero Page
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(temp, X);
-                    cycles = 3;
-                    break;
-
-                case 0x8E: // STX Absolute
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    Write(targetAddr, X);
-                    cycles = 4;
-                    break;
-
-                case 0x84: // STY Zero Page
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(temp, Y);
-                    cycles = 3;
-                    break;
-
-                case 0x8C: // STY Absolute
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    Write(targetAddr, Y);
-                    cycles = 4;
-                    break;
-
-                case 0xD0: // BNE
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    cycles = 2;
-                    if (!flag_Zero)
-                    {
-                        cycles++;
-                        signedVal = temp;
-                        if (signedVal > 127)
-                        {
-                            signedVal -= 256;
-                        }
-                        ProgramCounter = (ushort)(ProgramCounter+signedVal);
-                    }
-                    break;
-
-                default:
-                    CPU_Halted = true;
-                    cycles = 0;
-                    break;
+                CPU_Halted = true;
+                cycles = 0;
             }
+
+            return;
+        }
+
+        switch (opcode)
+        {
+            case 0xA0: // LDY Immediate
+                if (cycles == 1)
+                {
+                    Y = Read(ProgramCounter);
+                    ProgramCounter++;
+                    SetZeroNegative(Y);
+                    cycles = 0;
+                }
+                break;
+
+            case 0xA2: // LDX Immediate
+                if (cycles == 1)
+                {
+                    X = Read(ProgramCounter);
+                    ProgramCounter++;
+                    SetZeroNegative(X);
+                    cycles = 0;
+                }
+                break;
+
+            case 0xA9: // LDA Immediate
+                if (cycles == 1)
+                {
+                    A = Read(ProgramCounter);
+                    ProgramCounter++;
+                    SetZeroNegative(A);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x85: // STA Zero Page
+                if (cycles == 1)
+                {
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = temp;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    Write(targetAddr, A);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x8D: // STA Absolute
+                if (cycles == 1)
+                {
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    cycles = 3;
+                }
+                else if (cycles == 3)
+                {
+                    Write(targetAddr, A);
+                    cycles = 0;
+                }
+                break;
+
+            case 0xA5: // LDA Zero Page
+                if (cycles == 1)
+                {
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = temp;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    A = Read(targetAddr);
+                    SetZeroNegative(A);
+                    cycles = 0;
+                }
+                break;
+
+            case 0xAD: // LDA Absolute
+                if (cycles == 1)
+                {
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    cycles = 3;
+                }
+                else if (cycles == 3)
+                {
+                    A = Read(targetAddr);
+                    SetZeroNegative(A);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x86: // STX Zero Page
+                if (cycles == 1)
+                {
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = temp;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    Write(targetAddr, X);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x8E: // STX Absolute
+                if (cycles == 1)
+                {
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    cycles = 3;
+                }
+                else if (cycles == 3)
+                {
+                    Write(targetAddr, X);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x84: // STY Zero Page
+                if (cycles == 1)
+                {
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = temp;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    Write(targetAddr, Y);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x8C: // STY Absolute
+                if (cycles == 1)
+                {
+                    tempLow = Read(ProgramCounter);
+                    ProgramCounter++;
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    tempHigh = Read(ProgramCounter);
+                    ProgramCounter++;
+                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                    cycles = 3;
+                }
+                else if (cycles == 3)
+                {
+                    Write(targetAddr, Y);
+                    cycles = 0;
+                }
+                break;
+
+            case 0x10: // BPL
+            case 0x30: // BMI
+            case 0x50: // BVC
+            case 0x70: // BVS
+            case 0x90: // BCC
+            case 0xB0: // BCS
+            case 0xD0: // BNE
+            case 0xF0: // BEQ
+                if (cycles == 1)
+                {
+                    temp = Read(ProgramCounter);
+                    ProgramCounter++;
+
+                    if (!BranchCondition())
+                    {
+                        cycles = 0;
+                        break;
+                    }
+
+                    tempPC = ProgramCounter;
+
+                    signedVal = temp;
+                    if (signedVal > 127)
+                    {
+                        signedVal -= 256;
+                    }
+
+                    targetAddr = (ushort)(ProgramCounter + signedVal);
+                    cycles = 2;
+                }
+                else if (cycles == 2)
+                {
+                    Read(tempPC);
+
+                    if ((tempPC & 0xFF00) != (targetAddr & 0xFF00))
+                    {
+                        ProgramCounter = (ushort)(
+                            (tempPC & 0xFF00) |
+                            (targetAddr & 0x00FF));
+
+                        cycles = 3;
+                    }
+                    else
+                    {
+                        ProgramCounter = targetAddr;
+                        cycles = 0;
+                    }
+                }
+                else if (cycles == 3)
+                {
+                    Read(ProgramCounter);
+                    ProgramCounter = targetAddr;
+                    cycles = 0;
+                }
+                break;
+
+            default:
+                CPU_Halted = true;
+                cycles = 0;
+                break;
         }
     }
 
@@ -202,21 +372,62 @@ public class Emulator
 
         byte[] fileBytes = File.ReadAllBytes(filepath);
 
+        if (fileBytes.Length < 16 ||
+            fileBytes[0] != 0x4E ||
+            fileBytes[1] != 0x45 ||
+            fileBytes[2] != 0x53 ||
+            fileBytes[3] != 0x1A)
+        {
+            Console.WriteLine("Error: Invalid iNES ROM file");
+            return;
+        }
+
         int prgPages = fileBytes[4];
         int prgSize = prgPages * 16384;
+        int prgOffset = 0x10;
+
+        if ((fileBytes[6] & 0x04) != 0)
+        {
+            prgOffset += 512;
+        }
+
+        if (fileBytes.Length < prgOffset + prgSize)
+        {
+            Console.WriteLine("Error: ROM file is incomplete");
+            return;
+        }
+
+        Array.Clear(ROM, 0, ROM.Length);
 
         if (prgSize == 16384)
         {
-            Array.Copy(fileBytes, 0x10, ROM, 0, 16384);
-            Array.Copy(fileBytes, 0x10, ROM, 16384, 16384);
+            Array.Copy(fileBytes, prgOffset, ROM, 0, 16384);
+            Array.Copy(fileBytes, prgOffset, ROM, 16384, 16384);
         }
         else
         {
-            Array.Copy(fileBytes, 0x10, ROM, 0, Math.Min(prgSize, ROM.Length));
+            Array.Copy(fileBytes, prgOffset, ROM, 0,
+                Math.Min(prgSize, ROM.Length));
         }
 
+        ProgramCounter = 0;
+        A = 0;
+        X = 0;
+        Y = 0;
+        opcode = 0;
+        cycles = 0;
+
+        CPU_Halted = false;
+
+        flag_Carry = false;
+        flag_Zero = false;
         flag_InterruptDisable = true;
-        
+        flag_Decimal = false;
+        flag_Overflow = false;
+        flag_Negative = false;
+
+        Array.Clear(RAM, 0, RAM.Length);
+
         byte pcLow = Read(0xFFFC);
         byte pcHigh = Read(0xFFFD);
         ProgramCounter = (ushort)((pcHigh * 0x100) + pcLow);
@@ -227,16 +438,16 @@ public class Emulator
         }
     }
 
-    class Program 
+    class Program
     {
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
             string path = "/Users/damian/Programming/YANESEmu/2_ReadWrite.nes";
-            
+
             emulator.Reset(path);
             emulator.Run();
-            
+
             Console.WriteLine($"Emulator halted. Final PC: 0x{emulator.ProgramCounter:X4}");
             Console.WriteLine($"A : 0x{emulator.A:X2} ({emulator.A})");
             Console.WriteLine($"X : 0x{emulator.X:X2} ({emulator.X})");
