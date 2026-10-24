@@ -47,6 +47,10 @@ public class Emulator
     {
         opcode = Read(ProgramCounter);
         ProgramCounter++;
+        byte temp;
+        byte tempLow;
+        byte tempHigh;
+        ushort targetAddr;
 
         switch (opcode)
         {
@@ -55,110 +59,88 @@ public class Emulator
                 break;
 
             case 0xA0:
-                {
-                    Y = Read(ProgramCounter);
-                    flag_Zero = (Y == 0);
-                    flag_Negative = (Y & 0x80) != 0;
-                    ProgramCounter++;
-                }
+                Y = Read(ProgramCounter);
+                flag_Zero = (Y == 0);
+                flag_Negative = (Y & 0x80) != 0;
+                ProgramCounter++;
                 break;
 
             case 0xA2:
-                {
-                    X = Read(ProgramCounter);
-                    flag_Zero = (X == 0);
-                    flag_Negative = (X & 0x80) != 0;
-                    ProgramCounter++;
-                }
+                X = Read(ProgramCounter);
+                flag_Zero = (X == 0);
+                flag_Negative = (X & 0x80) != 0;
+                ProgramCounter++;
                 break;
 
             case 0xA9:
-                {
-                    A = Read(ProgramCounter);
-                    flag_Zero = (A == 0);
-                    flag_Negative = (A & 0x80) != 0;
-                    ProgramCounter++;
-                }
+                A = Read(ProgramCounter);
+                flag_Zero = (A == 0);
+                flag_Negative = (A & 0x80) != 0;
+                ProgramCounter++;
                 break;
 
             case 0x85:
-                {
-                    byte temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(temp, A);
-                }
+                temp = Read(ProgramCounter);
+                ProgramCounter++;
+                Write(temp, A);
                 break;
 
             case 0x8D:
-                {
-                    byte tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    byte tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    Write(targetAddr, A);
-                }
+                tempLow = Read(ProgramCounter);
+                ProgramCounter++;
+                tempHigh = Read(ProgramCounter);
+                ProgramCounter++;
+                targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                Write(targetAddr, A);
                 break;
 
             case 0xA5:
-                {
-                    byte temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    A = Read(temp);
-                    flag_Zero = (A == 0);
-                    flag_Negative = (A & 0x80) != 0;
-                }
+                temp = Read(ProgramCounter);
+                ProgramCounter++;
+                A = Read(temp);
+                flag_Zero = (A == 0);
+                flag_Negative = (A & 0x80) != 0;
                 break;
 
             case 0xAD:
-                {
-                    byte tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    byte tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    A = Read(targetAddr);
-                    flag_Zero = (A == 0);
-                    flag_Negative = (A & 0x80) != 0;
-                }
+                tempLow = Read(ProgramCounter);
+                ProgramCounter++;
+                tempHigh = Read(ProgramCounter);
+                ProgramCounter++;
+                targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                A = Read(targetAddr);
+                flag_Zero = (A == 0);
+                flag_Negative = (A & 0x80) != 0;
                 break;
 
             case 0x86:
-                {
-                    byte temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(temp, X);
-                }
+                temp = Read(ProgramCounter);
+                ProgramCounter++;
+                Write(temp, X);
                 break;
 
             case 0x8E:
-                {
-                    byte tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    byte tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    Write(targetAddr, X);
-                }
+                tempLow = Read(ProgramCounter);
+                ProgramCounter++;
+                tempHigh = Read(ProgramCounter);
+                ProgramCounter++;
+                targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                Write(targetAddr, X);
                 break;
 
             case 0x84:
-                {
-                    byte temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    Write(temp, Y);
-                }
+                temp = Read(ProgramCounter);
+                ProgramCounter++;
+                Write(temp, Y);
                 break;
 
             case 0x8C:
-                {
-                    byte tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    byte tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    ushort targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    Write(targetAddr, Y);
-                }
+                tempLow = Read(ProgramCounter);
+                ProgramCounter++;
+                tempHigh = Read(ProgramCounter);
+                ProgramCounter++;
+                targetAddr = (ushort)((tempHigh << 8) | tempLow);
+                Write(targetAddr, Y);
                 break;
 
             default:
@@ -166,7 +148,6 @@ public class Emulator
                 break;
         }
     }
-
     public void Run()
     {
         while (!CPU_Halted)
