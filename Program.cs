@@ -194,6 +194,86 @@ public class Emulator
                 ProgramCounter = (ushort)((Temp_High * 256) + Temp_Low);
                 return 3;
 
+            case 0xE8: // INX
+                X++;
+                SetZeroNegative(X);
+                return 2;
+
+            case 0xCA: // DEX
+                X--;
+                SetZeroNegative(X);
+                return 2;
+
+            case 0xC8: // INY
+                Y++;
+                SetZeroNegative(Y);
+                return 2;
+
+            case 0x88: // DEY
+                Y--;
+                SetZeroNegative(Y);
+                return 2;
+
+            case 0xAA: // TAX
+                X = A;
+                SetZeroNegative(X);
+                return 2;
+
+            case 0x8A: // TXA
+                A = X;
+                SetZeroNegative(A);
+                return 2;
+
+            case 0xA8: // TAY
+                Y = A;
+                SetZeroNegative(Y);
+                return 2;
+
+            case 0x98: // TYA
+                A = Y;
+                SetZeroNegative(A);
+                return 2;
+
+            case 0x9A: // TXS
+                stackPointer = X;
+                return 2;
+
+            case 0xBA: // TSX
+                X = stackPointer;
+                SetZeroNegative(X);
+                return 2;
+
+            case 0x38: // SEC
+                flag_Carry = true;
+                return 2;
+
+            case 0x18: // CLC
+                flag_Carry = false;
+                return 2;
+
+            case 0xB8: // CLV
+                flag_Overflow = false;
+                return 2;
+
+            case 0x78: // SEI
+                flag_InterruptDisable = true;
+                return 2;
+
+            case 0x58: // CLI
+                flag_InterruptDisable = false;
+                return 2;
+
+            case 0xF8: // SED
+                flag_Decimal = true;
+                return 2;
+
+            case 0xD8: // CLD
+                flag_Decimal = false;
+                return 2;
+
+            case 0xEA: // NOP
+                return 2;
+
             // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
