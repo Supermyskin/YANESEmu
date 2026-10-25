@@ -160,6 +160,15 @@ public class Emulator
                 Write(targetAddr, Y);
                 return 4;
 
+            case 0x48: //PHA
+                Push(A);
+                return 3;
+
+            case 0x68: //PLA
+                A = Pull();
+                SetZeroNegative(A);
+                return 4;
+
             // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
