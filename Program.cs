@@ -8,7 +8,6 @@ public class Emulator
     public byte X;
     public byte Y;
     public byte opcode;
-    public int cycles;
 
     public byte stackPointer;
 
@@ -24,12 +23,6 @@ public class Emulator
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
 
-    private byte temp;
-    private byte tempLow;
-    private byte tempHigh;
-    private ushort targetAddr;
-    private ushort tempPC;
-
     public byte Read(ushort addr)
     {
         if (addr < 0x2000)
@@ -42,6 +35,13 @@ public class Emulator
             return ROM[romIndex];
         }
         return 0;
+    }
+
+    public ushort ReadWord(ushort addr)
+    {
+        ushort low = Read(addr);
+        ushort high = Read((ushort)(addr + 1));
+        return (ushort)((high << 8) | low);
     }
 
     public void Write(ushort addr, byte value)
@@ -58,254 +58,109 @@ public class Emulator
         flag_Negative = (value & 0x80) != 0;
     }
 
-    private bool BranchCondition()
+    public void Push(byte value)
     {
-        switch (opcode)
-        {
-            case 0x10: // BPL
-                return !flag_Negative;
-
-            case 0x30: // BMI
-                return flag_Negative;
-
-            case 0x50: // BVC
-                return !flag_Overflow;
-
-            case 0x70: // BVS
-                return flag_Overflow;
-
-            case 0x90: // BCC
-                return !flag_Carry;
-
-            case 0xB0: // BCS
-                return flag_Carry;
-
-            case 0xD0: // BNE
-                return !flag_Zero;
-
-            case 0xF0: // BEQ
-                return flag_Zero;
-
-            default:
-                return false;
-        }
-    }
-
-    public void Push(byte Value)
-    {
-        Write((ushort)(0x100 + stackPointer), Value);
+        Write((ushort)(0x100 + stackPointer), value);
         stackPointer--;
     }
 
     public byte Pull()
     {
         stackPointer++;
-        temp = Read((ushort)(0x100 + stackPointer));
-        return temp;
+        return Read((ushort)(0x100 + stackPointer));
     }
 
-    public void Emulate_CPU()
+    private bool BranchCondition(byte op)
     {
-        int signedVal;
-
-        if (CPU_Halted)
+        switch (op)
         {
-            return;
+            case 0x10: return !flag_Negative;       // BPL
+            case 0x30: return flag_Negative;        // BMI
+            case 0x50: return !flag_Overflow;       // BVC
+            case 0x70: return flag_Overflow;        // BVS
+            case 0x90: return !flag_Carry;          // BCC
+            case 0xB0: return flag_Carry;           // BCS
+            case 0xD0: return !flag_Zero;           // BNE
+            case 0xF0: return flag_Zero;            // BEQ
+            default: return false;
         }
+    }
 
-        if (cycles == 0)
-        {
-            opcode = Read(ProgramCounter);
-            ProgramCounter++;
-            cycles = 1;
+    public int Step()
+    {
+        if (CPU_Halted) return 0;
 
-            if (opcode == 0x02)
-            {
-                CPU_Halted = true;
-                cycles = 0;
-            }
-
-            return;
-        }
+        opcode = Read(ProgramCounter++);
+        ushort targetAddr;
 
         switch (opcode)
         {
+            case 0x02: // HLT
+                CPU_Halted = true;
+                return 2;
+
             case 0xA0: // LDY Immediate
-                if (cycles == 1)
-                {
-                    Y = Read(ProgramCounter);
-                    ProgramCounter++;
-                    SetZeroNegative(Y);
-                    cycles = 0;
-                }
-                break;
+                Y = Read(ProgramCounter++);
+                SetZeroNegative(Y);
+                return 2;
 
             case 0xA2: // LDX Immediate
-                if (cycles == 1)
-                {
-                    X = Read(ProgramCounter);
-                    ProgramCounter++;
-                    SetZeroNegative(X);
-                    cycles = 0;
-                }
-                break;
+                X = Read(ProgramCounter++);
+                SetZeroNegative(X);
+                return 2;
 
             case 0xA9: // LDA Immediate
-                if (cycles == 1)
-                {
-                    A = Read(ProgramCounter);
-                    ProgramCounter++;
-                    SetZeroNegative(A);
-                    cycles = 0;
-                }
-                break;
+                A = Read(ProgramCounter++);
+                SetZeroNegative(A);
+                return 2;
 
             case 0x85: // STA Zero Page
-                if (cycles == 1)
-                {
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = temp;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    Write(targetAddr, A);
-                    cycles = 0;
-                }
-                break;
-
-            case 0x8D: // STA Absolute
-                if (cycles == 1)
-                {
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    cycles = 3;
-                }
-                else if (cycles == 3)
-                {
-                    Write(targetAddr, A);
-                    cycles = 0;
-                }
-                break;
+                targetAddr = Read(ProgramCounter++);
+                Write(targetAddr, A);
+                return 3;
 
             case 0xA5: // LDA Zero Page
-                if (cycles == 1)
-                {
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = temp;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    A = Read(targetAddr);
-                    SetZeroNegative(A);
-                    cycles = 0;
-                }
-                break;
-
-            case 0xAD: // LDA Absolute
-                if (cycles == 1)
-                {
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    cycles = 3;
-                }
-                else if (cycles == 3)
-                {
-                    A = Read(targetAddr);
-                    SetZeroNegative(A);
-                    cycles = 0;
-                }
-                break;
+                targetAddr = Read(ProgramCounter++);
+                A = Read(targetAddr);
+                SetZeroNegative(A);
+                return 3;
 
             case 0x86: // STX Zero Page
-                if (cycles == 1)
-                {
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = temp;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    Write(targetAddr, X);
-                    cycles = 0;
-                }
-                break;
-
-            case 0x8E: // STX Absolute
-                if (cycles == 1)
-                {
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    cycles = 3;
-                }
-                else if (cycles == 3)
-                {
-                    Write(targetAddr, X);
-                    cycles = 0;
-                }
-                break;
+                targetAddr = Read(ProgramCounter++);
+                Write(targetAddr, X);
+                return 3;
 
             case 0x84: // STY Zero Page
-                if (cycles == 1)
-                {
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = temp;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    Write(targetAddr, Y);
-                    cycles = 0;
-                }
-                break;
+                targetAddr = Read(ProgramCounter++);
+                Write(targetAddr, Y);
+                return 3;
+
+            case 0x8D: // STA Absolute
+                targetAddr = ReadWord(ProgramCounter);
+                ProgramCounter += 2;
+                Write(targetAddr, A);
+                return 4;
+
+            case 0xAD: // LDA Absolute
+                targetAddr = ReadWord(ProgramCounter);
+                ProgramCounter += 2;
+                A = Read(targetAddr);
+                SetZeroNegative(A);
+                return 4;
+
+            case 0x8E: // STX Absolute
+                targetAddr = ReadWord(ProgramCounter);
+                ProgramCounter += 2;
+                Write(targetAddr, X);
+                return 4;
 
             case 0x8C: // STY Absolute
-                if (cycles == 1)
-                {
-                    tempLow = Read(ProgramCounter);
-                    ProgramCounter++;
-                    cycles = 2;
-                }
-                else if (cycles == 2)
-                {
-                    tempHigh = Read(ProgramCounter);
-                    ProgramCounter++;
-                    targetAddr = (ushort)((tempHigh << 8) | tempLow);
-                    cycles = 3;
-                }
-                else if (cycles == 3)
-                {
-                    Write(targetAddr, Y);
-                    cycles = 0;
-                }
-                break;
+                targetAddr = ReadWord(ProgramCounter);
+                ProgramCounter += 2;
+                Write(targetAddr, Y);
+                return 4;
 
+            // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
             case 0x50: // BVC
@@ -314,58 +169,28 @@ public class Emulator
             case 0xB0: // BCS
             case 0xD0: // BNE
             case 0xF0: // BEQ
-                if (cycles == 1)
                 {
-                    temp = Read(ProgramCounter);
-                    ProgramCounter++;
+                    sbyte offset = (sbyte)Read(ProgramCounter++);
+                    int branchCycles = 2;
 
-                    if (!BranchCondition())
+                    if (BranchCondition(opcode))
                     {
-                        cycles = 0;
-                        break;
+                        ushort oldPC = ProgramCounter;
+                        ProgramCounter = (ushort)(ProgramCounter + offset);
+                        branchCycles++;
+
+                        if ((oldPC & 0xFF00) != (ProgramCounter & 0xFF00))
+                        {
+                            branchCycles++;
+                        }
                     }
-
-                    tempPC = ProgramCounter;
-
-                    signedVal = temp;
-                    if (signedVal > 127)
-                    {
-                        signedVal -= 256;
-                    }
-
-                    targetAddr = (ushort)(ProgramCounter + signedVal);
-                    cycles = 2;
+                    return branchCycles;
                 }
-                else if (cycles == 2)
-                {
-                    Read(tempPC);
-
-                    if ((tempPC & 0xFF00) != (targetAddr & 0xFF00))
-                    {
-                        ProgramCounter = (ushort)(
-                            (tempPC & 0xFF00) |
-                            (targetAddr & 0x00FF));
-
-                        cycles = 3;
-                    }
-                    else
-                    {
-                        ProgramCounter = targetAddr;
-                        cycles = 0;
-                    }
-                }
-                else if (cycles == 3)
-                {
-                    Read(ProgramCounter);
-                    ProgramCounter = targetAddr;
-                    cycles = 0;
-                }
-                break;
 
             default:
+                Console.WriteLine($"Unknown opcode 0x{opcode:X2} at PC: 0x{(ProgramCounter - 1):X4}");
                 CPU_Halted = true;
-                cycles = 0;
-                break;
+                return 2;
         }
     }
 
@@ -373,7 +198,7 @@ public class Emulator
     {
         while (!CPU_Halted)
         {
-            Emulate_CPU();
+            Step();
         }
     }
 
@@ -422,8 +247,7 @@ public class Emulator
         }
         else
         {
-            Array.Copy(fileBytes, prgOffset, ROM, 0,
-                Math.Min(prgSize, ROM.Length));
+            Array.Copy(fileBytes, prgOffset, ROM, 0, Math.Min(prgSize, ROM.Length));
         }
 
         ProgramCounter = 0;
@@ -431,7 +255,6 @@ public class Emulator
         X = 0;
         Y = 0;
         opcode = 0;
-        cycles = 0;
 
         CPU_Halted = false;
 
