@@ -186,7 +186,7 @@ public class Emulator
                 ProgramCounter = (ushort)(Temp_High*256 + Temp_Low);
                 ProgramCounter++;
                 return 6;
-                
+
             // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
@@ -309,7 +309,7 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/3_Branches.nes";
+            string path = "/Users/damian/Programming/YANESEmu/4_TheStack.nes";
 
             emulator.Reset(path);
             emulator.Run();
