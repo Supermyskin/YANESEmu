@@ -92,6 +92,8 @@ public class Emulator
 
         opcode = Read(ProgramCounter++);
         ushort targetAddr;
+        byte Temp_High;
+        byte Temp_Low;
 
         switch (opcode)
         {
@@ -168,7 +170,23 @@ public class Emulator
                 A = Pull();
                 SetZeroNegative(A);
                 return 4;
+            
+            case 0x20: //JSR
+                Temp_Low = Read(ProgramCounter);
+                ProgramCounter++;
+                Push((byte)(ProgramCounter/256)); //Push PCH
+                Push((byte)ProgramCounter); //Push PCL
+                Temp_High = Read(ProgramCounter);
+                ProgramCounter = (ushort)(Temp_High*256 + Temp_Low);
+                return 6;
 
+            case 0x60: //RTS
+                Temp_Low = Pull();
+                Temp_High = Pull();
+                ProgramCounter = (ushort)(Temp_High*256 + Temp_Low);
+                ProgramCounter++;
+                return 6;
+                
             // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
