@@ -187,6 +187,13 @@ public class Emulator
                 ProgramCounter++;
                 return 6;
 
+            case 0x4C: // JMP Absolute
+                Temp_Low = Read(ProgramCounter);
+                ProgramCounter++;
+                Temp_High = Read(ProgramCounter);
+                ProgramCounter = (ushort)((Temp_High * 256) + Temp_Low);
+                return 3;
+
             // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
