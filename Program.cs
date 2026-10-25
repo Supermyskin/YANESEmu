@@ -443,7 +443,7 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/2_ReadWrite.nes";
+            string path = "/Users/damian/Programming/YANESEmu/3_Branches.nes";
 
             emulator.Reset(path);
             emulator.Run();
