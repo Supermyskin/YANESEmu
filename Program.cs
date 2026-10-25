@@ -10,6 +10,8 @@ public class Emulator
     public byte opcode;
     public int cycles;
 
+    public byte stackPointer;
+
     public bool CPU_Halted = false;
 
     public bool flag_Carry;
@@ -87,6 +89,19 @@ public class Emulator
             default:
                 return false;
         }
+    }
+
+    public void Push(byte Value)
+    {
+        Write((ushort)(0x100 + stackPointer), Value);
+        stackPointer--;
+    }
+
+    public byte Pull()
+    {
+        stackPointer++;
+        temp = Read((ushort)(0x100 + stackPointer));
+        return temp;
     }
 
     public void Emulate_CPU()
@@ -382,6 +397,7 @@ public class Emulator
             return;
         }
 
+        stackPointer = 0xFD;
         int prgPages = fileBytes[4];
         int prgSize = prgPages * 16384;
         int prgOffset = 0x10;
