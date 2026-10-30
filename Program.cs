@@ -58,6 +58,15 @@ public class Emulator
         flag_Negative = (value & 0x80) != 0;
     }
 
+    void Op_ASL(ushort Addr, byte Input)
+    {
+        flag_Carry = Input >= 0x80;
+        Input <<= 1;
+        Write(Addr, Input);
+        flag_Negative = Input >= 0x80;
+        flag_Zero = Input == 0x00;
+    }
+
     public void Push(byte value)
     {
         Write((ushort)(0x100 + stackPointer), value);
@@ -297,6 +306,13 @@ public class Emulator
                 flag_Overflow = (Temp & 0x40) != 0;
                 flag_Negative = (Temp & 0x80) != 0;
                 return 3;
+
+            case 0x0A: //ASL A
+                flag_Carry = A > 127;
+                A <<= 1;
+                flag_Zero = A == 0;
+                flag_Negative = A > 127;
+                return 2;
 
             // branch instuctions
             case 0x10: // BPL
