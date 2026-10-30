@@ -68,6 +68,20 @@ public class Emulator
         flag_Zero = Input == 0x00;
     }
 
+    void Op_ROL(ushort Addr, byte Input)
+    {
+        bool Futureflag_Carry = Input >= 0x80;
+        Input <<= 1;
+        if (flag_Carry)
+        {
+            Input |= 1;
+        }
+        Write(Addr, Input);
+        flag_Carry = Futureflag_Carry;
+        flag_Negative = Input >= 0x80;
+        flag_Zero = Input == 0x00;
+    }
+
     void ReadOperands_AbsoluteAdressed()
     {
         addressBus = Read(ProgramCounter);
@@ -336,6 +350,28 @@ public class Emulator
             case 0x0E: //ASL Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ASL(addressBus, Read(addressBus));
+                return 6;
+
+            case 0x2A: // ROL Accumulator
+                bool futureCarry = (A >= 0x80);
+                A <<= 1;
+                if (flag_Carry)
+                {
+                    A |= 1;
+                }
+                flag_Carry = futureCarry;
+                flag_Negative = (A >= 0x80);
+                flag_Zero = (A == 0);
+                return 2;
+
+            case 0x26: // ROL Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_ROL(addressBus, Read(addressBus));
+                return 5;
+
+            case 0x2E: // ROL Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_ROL(addressBus, Read(addressBus));
                 return 6;
 
             // branch instuctions
