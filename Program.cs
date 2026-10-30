@@ -11,6 +11,7 @@ public class Emulator
 
     public byte stackPointer;
     public ushort addressBus;
+    public bool futureCarry;
 
     public bool CPU_Halted = false;
 
@@ -91,6 +92,20 @@ public class Emulator
         flag_Carry = Futureflag_Carry;
         flag_Negative = Input >= 0x80;
         flag_Zero = Input == 0x00;
+    }
+
+    void Op_ROR(ushort addr, byte input)
+    {
+        futureCarry = (input & 0x01) != 0;
+        byte result = (byte)(input >> 1);
+        if (flag_Carry)
+        {
+            result |= 0x80;
+        }
+        Write(addr, result);
+        flag_Carry = futureCarry;
+        flag_Zero = result == 0;
+        flag_Negative = result >= 0x80;
     }
 
     void ReadOperands_AbsoluteAdressed()
@@ -400,6 +415,28 @@ public class Emulator
             case 0x4E: // LSR Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_LSR(addressBus, Read(addressBus));
+                return 6;
+
+            case 0x6A: // ROR A
+                futureCarry = (A & 0x01) != 0;
+                A >>= 1;
+                if (flag_Carry)
+                {
+                    A |= 0x80;
+                }
+                flag_Carry = futureCarry;
+                flag_Zero = A == 0;
+                flag_Negative = A >= 0x80;
+                return 2;
+
+            case 0x66: // ROR Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_ROR(addressBus, Read(addressBus));
+                return 5;
+
+            case 0x6E: // ROR Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_ROR(addressBus, Read(addressBus));
                 return 6;
 
             // branch instuctions
