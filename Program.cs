@@ -10,6 +10,7 @@ public class Emulator
     public byte opcode;
 
     public byte stackPointer;
+    public ushort addressBus;
 
     public bool CPU_Halted = false;
 
@@ -65,6 +66,19 @@ public class Emulator
         Write(Addr, Input);
         flag_Negative = Input >= 0x80;
         flag_Zero = Input == 0x00;
+    }
+
+    void ReadOperands_AbsoluteAdressed()
+    {
+        addressBus = Read(ProgramCounter);
+        ProgramCounter++;
+        addressBus = (ushort)(Read(ProgramCounter)<< 8 | addressBus);
+        ProgramCounter++;
+    }
+    void ReadOperands_ZeroPageAddressed()
+    {
+        addressBus = Read(ProgramCounter);
+        ProgramCounter++;
     }
 
     public void Push(byte value)
@@ -313,6 +327,16 @@ public class Emulator
                 flag_Zero = A == 0;
                 flag_Negative = A > 127;
                 return 2;
+
+            case 0x06: //ASL Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_ASL(addressBus, Read(addressBus));
+                return 5;
+
+            case 0x0E: //ASL Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_ASL(addressBus, Read(addressBus));
+                return 6;
 
             // branch instuctions
             case 0x10: // BPL
