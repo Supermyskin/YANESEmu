@@ -94,6 +94,7 @@ public class Emulator
         ushort targetAddr;
         byte Temp_High;
         byte Temp_Low;
+        byte Temp;
 
         switch (opcode)
         {
@@ -273,6 +274,19 @@ public class Emulator
 
             case 0xEA: // NOP
                 return 2;
+
+            case 0x08: //PHP
+                Temp = 0;
+                Temp += (byte)(flag_Carry ? 1 : 0);
+                Temp += (byte)(flag_Zero ? 2 : 0);
+                Temp += (byte)(flag_InterruptDisable ? 4 : 0);
+                Temp += (byte)(flag_Decimal ? 8 : 0);
+                Temp += 0x10;
+                Temp += 0x20;
+                Temp += (byte)(flag_Overflow ? 0x40 : 0);
+                Temp += (byte)(flag_Negative ? 0x80 : 0);
+                Push(Temp);
+                return 3;
 
             // branch instuctions
             case 0x10: // BPL
