@@ -53,6 +53,17 @@ public class Emulator
         }
     }
 
+    //OPCode specific things
+
+    void Op_LSR(ushort addr, byte input)
+    {
+        flag_Carry = (input & 0x01) != 0;
+        byte result = (byte)(input >> 1);
+        Write(addr, result);
+        flag_Zero = result == 0;
+        flag_Negative = false;
+    }
+
     private void SetZeroNegative(byte value)
     {
         flag_Zero = (value == 0);
@@ -352,7 +363,7 @@ public class Emulator
                 Op_ASL(addressBus, Read(addressBus));
                 return 6;
 
-            case 0x2A: // ROL Accumulator
+            case 0x2A: // ROL A
                 bool futureCarry = (A >= 0x80);
                 A <<= 1;
                 if (flag_Carry)
@@ -372,6 +383,23 @@ public class Emulator
             case 0x2E: // ROL Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ROL(addressBus, Read(addressBus));
+                return 6;
+
+            case 0x4A: // LSR A
+                flag_Carry = (A & 0x01) != 0;
+                A >>= 1;
+                flag_Zero = (A == 0);
+                flag_Negative = false;
+                return 2;
+
+            case 0x46: // LSR Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_LSR(addressBus, Read(addressBus));
+                return 5;
+
+            case 0x4E: // LSR Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_LSR(addressBus, Read(addressBus));
                 return 6;
 
             // branch instuctions
