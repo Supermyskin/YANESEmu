@@ -288,6 +288,16 @@ public class Emulator
                 Push(Temp);
                 return 3;
 
+            case 0x28: //PLP
+                Temp = Pull();
+                flag_Carry = (Temp & 1) != 0;
+                flag_Zero = (Temp & 2) != 0;
+                flag_InterruptDisable = (Temp & 4) != 0;
+                flag_Decimal = (Temp & 8) != 0;
+                flag_Overflow = (Temp & 0x40) != 0;
+                flag_Negative = (Temp & 0x80) != 0;
+                return 3;
+
             // branch instuctions
             case 0x10: // BPL
             case 0x30: // BMI
