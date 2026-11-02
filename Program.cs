@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Microsoft.AspNetCore.Authentication;
 
 public class Emulator
 {
@@ -149,6 +150,40 @@ public class Emulator
         A &= Input;
         flag_Negative = A >= 0x80;
         flag_Zero = A == 0x00; 
+    }
+
+    void Op_ADC(byte Input)
+    {
+        int IntSum = Input + A + (flag_Carry ? 1 : 0);
+        flag_Overflow = (~(A ^ Input) & (A ^ Input) & 0x80) != 0;
+        flag_Carry = IntSum > 0xFF;
+        A = (byte)IntSum;
+        flag_Negative = A >= 0x80;
+        flag_Zero = A == 0x00;
+    }
+
+    void Op_SBC(byte Input)
+    {
+        int IntSum = Input - A - (flag_Carry ? 1 : 0);
+        flag_Overflow = (~(A ^ Input) & (A ^ Input) & 0x80) != 0;
+        flag_Carry = IntSum > 0xFF;
+        A = (byte)IntSum;
+        flag_Negative = A >= 0x80;
+        flag_Zero = A == 0x00;
+    }
+
+    void Op_CMP(byte Input)
+    {
+        flag_Carry = Input <= A;
+        flag_Zero = Input == A;
+        flag_Negative = (byte)(A - Input) > 127;
+    }
+
+    void Op_BIT(byte Input)
+    {
+        flag_Zero = (A & Input) == 0;
+        flag_Negative = (Input & 0x80) != 0;
+        flag_Overflow = (Input & 0x40) != 0;
     }
 
     void Op_EOR(byte Input)
@@ -537,6 +572,77 @@ public class Emulator
                 ReadOperands_AbsoluteAdressed();
                 Op_EOR(Read(addressBus));
                 return 4;
+
+            case 0x69: // ADC Immediate
+                Op_ADC(Read(ProgramCounter++));
+                return 2;
+
+            case 0x65: // ADC Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_ADC(Read(addressBus));
+                return 3;
+
+            case 0x6D: // ADC Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_ADC(Read(addressBus));
+                return 4;
+
+            case 0xE9: // SBC Immediate
+                Op_SBC(Read(ProgramCounter++));
+                return 2;
+
+            case 0xE5: // SBC Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_SBC(Read(addressBus));
+                return 3;
+
+            case 0xED: // SBC Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_SBC(Read(addressBus));
+                return 4;
+
+            case 0xC9: // CMP Immediate
+                Op_CMP(Read(ProgramCounter++));
+                return 2;
+
+            case 0xC5: // CMP Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_CMP(Read(addressBus));
+                return 3;
+
+            case 0xCD: // CMP Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_CMP(Read(addressBus));
+                return 4;
+
+            case 0x24: // BIT Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_BIT(Read(addressBus));
+                return 3;
+
+            case 0x2C: // BIT Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_BIT(Read(addressBus));
+                return 4;
+
+            case 0x00: //BRK
+                ProgramCounter++;
+                Push((byte)(ProgramCounter >> 8));
+                Push((byte)ProgramCounter);
+                Temp = 0;
+                Temp += (byte)(flag_Carry ? 1 : 0);
+                Temp += (byte)(flag_Zero ? 2 : 0);
+                Temp += (byte)(flag_InterruptDisable ? 4 : 0);
+                Temp += (byte)(flag_Decimal ? 8 : 0);
+                Temp += 0x10;
+                Temp += 0x20;
+                Temp += (byte)(flag_Overflow ? 0x40 : 0);
+                Temp += (byte)(flag_Negative ? 0x80 : 0);
+                Push(Temp);
+                Temp_Low = Read(0xFFFE);
+                Temp_High = Read(0xFFFF);
+                ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
+                return 7;
 
             // branch instuctions
             case 0x10: // BPL
