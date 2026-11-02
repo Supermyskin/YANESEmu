@@ -644,7 +644,7 @@ public class Emulator
                 ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
                 return 7;
 
-            // branch instuctions
+            // Branch Instuctions
             case 0x10: // BPL
             case 0x30: // BMI
             case 0x50: // BVC
