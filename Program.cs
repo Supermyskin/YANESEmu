@@ -137,6 +137,27 @@ public class Emulator
         flag_Zero = Input == 0x00;
     }
 
+    void Op_ORA(byte Input)
+    {
+        A |= Input;
+        flag_Negative = A >= 0x80;
+        flag_Zero = A == 0x00;
+    }
+
+    void Op_AND(byte Input)
+    {
+        A &= Input;
+        flag_Negative = A >= 0x80;
+        flag_Zero = A == 0x00; 
+    }
+
+    void Op_EOR(byte Input)
+    {
+        A ^= Input;
+        flag_Negative = A >= 0x80;
+        flag_Zero = A == 0x00; 
+    }
+
     public void Push(byte value)
     {
         Write((ushort)(0x100 + stackPointer), value);
@@ -474,6 +495,48 @@ public class Emulator
                 ReadOperands_AbsoluteAdressed();
                 Op_DEC(addressBus, Read(addressBus));
                 return 6;
+
+            case 0x09: // ORA Immediate
+                Op_ORA(Read(ProgramCounter++));
+                return 2;
+
+            case 0x05: // ORA Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_ORA(Read(addressBus));
+                return 3;
+
+            case 0x0D: // ORA Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_ORA(Read(addressBus));
+                return 4;
+
+            case 0x29: // AND Immediate
+                Op_AND(Read(ProgramCounter++));
+                return 2;
+
+            case 0x25: // AND Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_AND(Read(addressBus));
+                return 3;
+
+            case 0x2D: // AND Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_AND(Read(addressBus));
+                return 4;
+
+            case 0x49: // EOR Immediate
+                Op_EOR(Read(ProgramCounter++));
+                return 2;
+
+            case 0x45: // EOR Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_EOR(Read(addressBus));
+                return 3;
+
+            case 0x4D: // EOR Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_EOR(Read(addressBus));
+                return 4;
 
             // branch instuctions
             case 0x10: // BPL
