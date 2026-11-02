@@ -197,29 +197,24 @@ public class Emulator
 
     void Op_ADC(byte Input)
     {
-        int IntSum = Input + A + (flag_Carry ? 1 : 0);
-        flag_Overflow = (~(A ^ Input) & (A ^ Input) & 0x80) != 0;
-        flag_Carry = IntSum > 0xFF;
-        A = (byte)IntSum;
-        flag_Negative = A >= 0x80;
-        flag_Zero = A == 0x00;
+        int sum = A + Input + (flag_Carry ? 1 : 0);
+        flag_Overflow = (~(A ^ Input) & (A ^ sum) & 0x80) != 0;
+        flag_Carry = sum > 0xFF;
+        A = (byte)sum;
+        SetZeroNegative(A);
     }
 
     void Op_SBC(byte Input)
     {
-        int IntSum = Input - A - (flag_Carry ? 1 : 0);
-        flag_Overflow = (~(A ^ Input) & (A ^ Input) & 0x80) != 0;
-        flag_Carry = IntSum > 0xFF;
-        A = (byte)IntSum;
-        flag_Negative = A >= 0x80;
-        flag_Zero = A == 0x00;
+        Op_ADC((byte)~Input);
     }
 
     void Op_CMP(byte Input)
     {
-        flag_Carry = Input <= A;
-        flag_Zero = Input == A;
-        flag_Negative = (byte)(A - Input) > 127;
+        int temp = A - Input;
+        flag_Carry = A >= Input;
+        flag_Zero = (temp & 0xFF) == 0;
+        flag_Negative = (temp & 0x80) != 0;
     }
 
     void Op_BIT(byte Input)
@@ -268,11 +263,14 @@ public class Emulator
     {
         if (CPU_Halted) return 0;
 
+        ushort pcBeforeStep = ProgramCounter;
         opcode = Read(ProgramCounter++);
         ushort targetAddr;
         byte Temp_High;
         byte Temp_Low;
         byte Temp;
+
+        Tracelogger(pcBeforeStep, opcode);
 
         switch (opcode)
         {
@@ -350,13 +348,12 @@ public class Emulator
                 SetZeroNegative(A);
                 return 4;
             
-            case 0x20: //JSR
-                Temp_Low = Read(ProgramCounter);
-                ProgramCounter++;
-                Push((byte)(ProgramCounter/256)); //Push PCH
-                Push((byte)ProgramCounter); //Push PCL
+            case 0x20: // JSR Absolute
+                Temp_Low = Read(ProgramCounter++);
                 Temp_High = Read(ProgramCounter);
-                ProgramCounter = (ushort)(Temp_High*256 + Temp_Low);
+                Push((byte)(ProgramCounter >> 8));
+                Push((byte)(ProgramCounter & 0xFF));
+                ProgramCounter = (ushort)((Temp_High << 8) | Temp_Low);
                 return 6;
 
             case 0x60: //RTS
