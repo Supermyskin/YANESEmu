@@ -46,22 +46,27 @@ public class Emulator
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
 
-    public void Tracelogger(byte opcode)
+    public long TotalCycles = 7;
+
+    public void Tracelogger(ushort pc, byte opcode)
     {
-                String line = "$" + ProgramCounter.ToString("X4")
-                + "\t" + opcode.ToString("X2")
-                + "\t\tA: " + A.ToString("X2")
-                + "\tX: " + X.ToString("X2")
-                + "\tY: " + Y.ToString("X2")
-                + "\tSP: " + stackPointer.ToString("X2")
-                + "\tProcessor Flags: "
-                + (flag_Negative ? "N" : "n")
-                + (flag_Overflow ? "V" : "v")
-                + "--"
-                + (flag_Decimal ? "D" : "d")
-                + (flag_InterruptDisable ? "I" : "i")
-                + (flag_Zero ? "Z" : "z")
-                + (flag_Carry ? "C" : "c");
+        byte p = 0;
+        if (flag_Carry)            p |= 0x01;
+        if (flag_Zero)             p |= 0x02;
+        if (flag_InterruptDisable) p |= 0x04;
+        if (flag_Decimal)          p |= 0x08;
+        p |= 0x20;
+        if (flag_Overflow)         p |= 0x40;
+        if (flag_Negative)         p |= 0x80;
+        byte b0 = opcode;
+        byte b1 = Read((ushort)(pc + 1));
+        byte b2 = Read((ushort)(pc + 2));
+        string name = OpCodeNames[opcode];
+        // C000  4C F5 C5  JMP $C5F5                  A:00 X:00 Y:00 P:24 SP:FD CYC:  7
+        Console.WriteLine(
+            $"{pc:X4}  {b0:X2} {b1:X2} {b2:X2}  {name,-4} " +
+            $"\tA:{A:X2} X:{X:X2} Y:{Y:X2} P:{p:X2} SP:{stackPointer:X2} CYC:{TotalCycles}"
+        );
     }
 
     public byte Read(ushort addr)
