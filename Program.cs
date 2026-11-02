@@ -121,6 +121,22 @@ public class Emulator
         ProgramCounter++;
     }
 
+    void Op_INC(ushort Addr, byte Input)
+    {
+        Input++;
+        Write(Addr, Input);
+        flag_Negative = Input >= 0x80;
+        flag_Zero = Input == 0x00;
+    }
+
+    void Op_DEC(ushort Addr, byte Input)
+    {
+        Input--;
+        Write(Addr, Input);
+        flag_Negative = Input >= 0x80;
+        flag_Zero = Input == 0x00;
+    }
+
     public void Push(byte value)
     {
         Write((ushort)(0x100 + stackPointer), value);
@@ -437,6 +453,26 @@ public class Emulator
             case 0x6E: // ROR Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ROR(addressBus, Read(addressBus));
+                return 6;
+
+            case 0xE6: // INC Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_INC(addressBus, Read(addressBus));
+                return 5;
+
+            case 0xEE: // INC Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_INC(addressBus, Read(addressBus));
+                return 6;
+
+            case 0xC6: // DEC Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_DEC(addressBus, Read(addressBus));
+                return 5;
+
+            case 0xCE: // DEC Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_DEC(addressBus, Read(addressBus));
                 return 6;
 
             // branch instuctions
