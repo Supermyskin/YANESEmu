@@ -23,8 +23,46 @@ public class Emulator
     public bool flag_Overflow;
     public bool flag_Negative;
 
+    String[] OpCodeNames =
+	{
+	"BRK","ORA","HLT","SLO","NOP","ORA","ASL","SLO","PHP","ORA","ASL","ANC","NOP","ORA","ASL","SLO",
+	"BPL","ORA","HLT","SLO","NOP","ORA","ASL","SLO","CLC","ORA","NOP","SLO","NOP","ORA","ASL","SLO",
+	"JSR","AND","HLT","RLA","BIT","AND","ROL","RLA","PLP","AND","ROL","ANC","BIT","AND","ROL","RLA",
+	"BMI","AND","HLT","RLA","NOP","AND","ROL","RLA","SEC","AND","NOP","RLA","NOP","AND","ROL","RLA",
+	"RTI","EOR","HLT","SRE","NOP","EOR","LSR","SRE","PHA","EOR","LSR","ALR","JMP","EOR","LSR","SRE",
+	"BVC","EOR","HLT","SRE","NOP","EOR","LSR","SRE","CLI","EOR","NOP","SRE","NOP","EOR","LSR","SRE",
+	"RTS","ADC","HLT","RRA","NOP","ADC","ROR","RRA","PLA","ADC","ROR","ARR","JMP","ADC","ROR","RRA",
+	"BVS","ADC","HLT","RRA","NOP","ADC","ROR","RRA","SEI","ADC","NOP","RRA","NOP","ADC","ROR","RRA",
+	"NOP","STA","NOP","SAX","STY","STA","STX","SAX","DEY","NOP","TXA","ANE","STY","STA","STX","SAX",
+	"BCC","STA","HLT","SHA","STY","STA","STX","SAX","TYA","STA","TXS","SHS","SHY","STA","SHX","SHA",
+	"LDY","LDA","LDX","LAX","LDY","LDA","LDX","LAX","TAY","LDA","TAX","LXA","LDY","LDA","LDX","LAX",
+	"BCS","LDA","HLT","LAX","LDY","LDA","LDX","LAX","CLV","LDA","TSX","LAE","LDY","LDA","LDX","LAX",
+	"CPY","CMP","NOP","DCP","CPY","CMP","DEC","DCP","INY","CMP","DEX","AXS","CPY","CMP","DEC","DCP",
+	"BNE","CMP","HLT","DCP","NOP","CMP","DEC","DPC","CLD","CMP","NOP","DCP","NOP","CMP","DEC","DCP",
+	"CPX","SBC","NOP","ISC","CPX","SBC","INC","ISC","INX","SBC","NOP","SBC","CPX","SBC","INC","ISC",
+	"BEQ","SBC","HLT","ISC","NOP","SBC","INC","ISC","SED","SBC","NOP","ISC","NOP","SBC","INC","ISC",
+    };
+
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
+
+    public void Tracelogger(byte opcode)
+    {
+                String line = "$" + ProgramCounter.ToString("X4")
+                + "\t" + opcode.ToString("X2")
+                + "\t\tA: " + A.ToString("X2")
+                + "\tX: " + X.ToString("X2")
+                + "\tY: " + Y.ToString("X2")
+                + "\tSP: " + stackPointer.ToString("X2")
+                + "\tProcessor Flags: "
+                + (flag_Negative ? "N" : "n")
+                + (flag_Overflow ? "V" : "v")
+                + "--"
+                + (flag_Decimal ? "D" : "d")
+                + (flag_InterruptDisable ? "I" : "i")
+                + (flag_Zero ? "Z" : "z")
+                + (flag_Carry ? "C" : "c");
+    }
 
     public byte Read(ushort addr)
     {
