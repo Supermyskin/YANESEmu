@@ -644,6 +644,19 @@ public class Emulator
                 ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
                 return 7;
 
+            case 0x40: //RTI
+                Temp = Pull();
+                flag_Carry = (Temp & 0x01) != 0;
+                flag_Zero = (Temp & 0x02) != 0;
+                flag_InterruptDisable = (Temp & 0x04) != 0;
+                flag_Decimal = (Temp & 0x08) != 0;
+                flag_Overflow = (Temp & 0x40) != 0;
+                flag_Negative = (Temp & 0x80) != 0;
+                Temp_Low = Pull();
+                Temp_High = Pull();
+                ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
+                return 6;
+
             // Branch Instuctions
             case 0x10: // BPL
             case 0x30: // BMI
