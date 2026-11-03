@@ -14,6 +14,7 @@ public class Emulator
     public ushort addressBus;
     public bool futureCarry;
     public long TotalCycles = 7;
+    private bool pageCrossed;
 
     public bool CPU_Halted = false;
 
@@ -122,6 +123,7 @@ public class Emulator
         ushort baseAddr = ReadWord(ProgramCounter);
         ProgramCounter += 2;
         addressBus = (ushort)(baseAddr + X);
+        pageCrossed = (baseAddr & 0xFF00) != (addressBus & 0xFF00);
     }
 
     void ReadOperands_AbsoluteYAddressed()
@@ -129,6 +131,7 @@ public class Emulator
         ushort baseAddr = ReadWord(ProgramCounter);
         ProgramCounter += 2;
         addressBus = (ushort)(baseAddr + Y);
+        pageCrossed = (baseAddr & 0xFF00) != (addressBus & 0xFF00);
     }
 
     void ReadOperands_IndirectXAddressed()
@@ -146,6 +149,7 @@ public class Emulator
         byte high = Read((ushort)((zp + 1) & 0xFF));
         ushort baseAddr = (ushort)((high << 8) | low);
         addressBus = (ushort)(baseAddr + Y);
+        pageCrossed = (baseAddr & 0xFF00) != (addressBus & 0xFF00);
     }
 
     private void SetZeroNegative(byte value)
@@ -322,7 +326,7 @@ public class Emulator
 
     public int Step()
     {
-        if (CPU_Halted) return 0;
+        if (CPU_Halted) return FinishStep(0);
 
         ushort pcBeforeStep = ProgramCounter;
         opcode = Read(ProgramCounter++);
@@ -332,8 +336,6 @@ public class Emulator
         byte Temp;
 
         Tracelogger(pcBeforeStep, opcode);
-
-        int cyclesThisStep = 0;
 
         switch (opcode)
         {
@@ -730,8 +732,8 @@ public class Emulator
 
 
             case 0x89: // BIT Immediate (65C02 / Extended)
-                Op_BIT(Read(ProgramCounter++));
-                return 2;
+                ProgramCounter++;
+                return FinishStep(2);
 
 
             case 0x00: // BRK Implied
@@ -755,39 +757,39 @@ public class Emulator
                 
                 // Jump to IRQ/BRK Vector ($FFFE/$FFFF)
                 byte brkLow = Read(0xFFFE);
-                byte brkHigh = Read(0xFFFD);
+                byte brkHigh = Read(0xFFFF);
                 ProgramCounter = (ushort)((brkHigh << 8) | brkLow);
-                return 7;
+                return FinishStep(7);
 
 
             case 0xE0: // CPX Immediate
                 Op_CPX(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0xE4: // CPX Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_CPX(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0xEC: // CPX Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_CPX(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
 
             case 0xC0: // CPY Immediate
                 Op_CPY(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0xC4: // CPY Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_CPY(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0xCC: // CPY Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_CPY(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
 
             case 0x6C: // JMP Indirect ($XXXX)
@@ -810,24 +812,24 @@ public class Emulator
                     byte jmpLow = Read(ptr);
                     byte jmpHigh = Read(highPtr);
                     ProgramCounter = (ushort)((jmpHigh << 8) | jmpLow);
-                    return 5;
+                    return FinishStep(5);
                 }
 
 
             case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA: case 0xFA:
-                return 2;
+                return FinishStep(2);
 
             case 0x80: case 0x82: case 0xC2: case 0xE2: case 0x04: case 0x44: case 0x64:
                 ProgramCounter++;
-                return 2;
+                return FinishStep(2);
 
             case 0x0C:
                 ProgramCounter += 2;
-                return 4;
+                return FinishStep(4);
 
             case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
                 ProgramCounter += 2;
-                return 4;
+                return FinishStep(4);
 
             case 0x40: // RTI Implied
             {
@@ -841,331 +843,331 @@ public class Emulator
                 byte rtiLow = Pull();
                 byte rtiHigh = Pull();
                 ProgramCounter = (ushort)((rtiHigh << 8) | rtiLow);
-                return 6;
+                return FinishStep(6);
             }
 
             case 0xB5: // LDA Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 A = Read(addressBus);
                 SetZeroNegative(A);
-                return 4;
+                return FinishStep(4);
 
             case 0xBD: // LDA Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 A = Read(addressBus);
                 SetZeroNegative(A);
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xB9: // LDA Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 A = Read(addressBus);
                 SetZeroNegative(A);
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xA1: // LDA (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 A = Read(addressBus);
                 SetZeroNegative(A);
-                return 6;
+                return FinishStep(6);
 
             case 0xB1: // LDA (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 A = Read(addressBus);
                 SetZeroNegative(A);
-                return 5;
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0xA6: // LDX Zero Page
                 ReadOperands_ZeroPageAddressed();
                 X = Read(addressBus);
                 SetZeroNegative(X);
-                return 3;
+                return FinishStep(3);
 
             case 0xB6: // LDX Zero Page,Y
                 ReadOperands_ZeroPageYAddressed();
                 X = Read(addressBus);
                 SetZeroNegative(X);
-                return 4;
+                return FinishStep(4);
 
             case 0xAE: // LDX Absolute
                 ReadOperands_AbsoluteAdressed();
                 X = Read(addressBus);
                 SetZeroNegative(X);
-                return 4;
+                return FinishStep(4);
 
             case 0xBE: // LDX Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 X = Read(addressBus);
                 SetZeroNegative(X);
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xA4: // LDY Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Y = Read(addressBus);
                 SetZeroNegative(Y);
-                return 3;
+                return FinishStep(3);
 
             case 0xB4: // LDY Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Y = Read(addressBus);
                 SetZeroNegative(Y);
-                return 4;
+                return FinishStep(4);
 
             case 0xAC: // LDY Absolute
                 ReadOperands_AbsoluteAdressed();
                 Y = Read(addressBus);
                 SetZeroNegative(Y);
-                return 4;
+                return FinishStep(4);
 
             case 0xBC: // LDY Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Y = Read(addressBus);
                 SetZeroNegative(Y);
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x95: // STA Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Write(addressBus, A);
-                return 4;
+                return FinishStep(4);
 
             case 0x9D: // STA Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Write(addressBus, A);
-                return 5;
+                return FinishStep(5);
 
             case 0x99: // STA Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Write(addressBus, A);
-                return 5;
+                return FinishStep(5);
 
             case 0x81: // STA (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Write(addressBus, A);
-                return 6;
+                return FinishStep(6);
 
             case 0x91: // STA (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Write(addressBus, A);
-                return 6;
+                return FinishStep(6);
 
             case 0x96: // STX Zero Page,Y
                 ReadOperands_ZeroPageYAddressed();
                 Write(addressBus, X);
-                return 4;
+                return FinishStep(4);
 
             case 0x94: // STY Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Write(addressBus, Y);
-                return 4;
+                return FinishStep(4);
 
             case 0x75: // ADC Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_ADC(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x7D: // ADC Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_ADC(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x79: // ADC Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Op_ADC(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x61: // ADC (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Op_ADC(Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x71: // ADC (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_ADC(Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0xF5: // SBC Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_SBC(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0xFD: // SBC Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_SBC(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xF9: // SBC Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Op_SBC(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xE1: // SBC (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Op_SBC(Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0xF1: // SBC (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_SBC(Read(addressBus));
-                return 5;
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0x35: // AND Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_AND(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x3D: // AND Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_AND(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x39: // AND Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Op_AND(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x21: // AND (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Op_AND(Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x31: // AND (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_AND(Read(addressBus));
-                return 5;
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0x15: // ORA Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_ORA(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x1D: // ORA Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_ORA(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x19: // ORA Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Op_ORA(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x01: // ORA (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Op_ORA(Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x11: // ORA (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_ORA(Read(addressBus));
-                return 5;
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0x55: // EOR Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_EOR(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x5D: // EOR Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_EOR(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x59: // EOR Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Op_EOR(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x41: // EOR (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Op_EOR(Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x51: // EOR (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_EOR(Read(addressBus));
-                return 5;
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0xD5: // CMP Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_CMP(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0xDD: // CMP Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_CMP(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xD9: // CMP Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Op_CMP(Read(addressBus));
-                return 4;
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xC1: // CMP (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 Op_CMP(Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0xD1: // CMP (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_CMP(Read(addressBus));
-                return 5;
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0xF6: // INC Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_INC(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0xFE: // INC Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_INC(addressBus, Read(addressBus));
-                return 7;
+                return FinishStep(7);
 
             case 0xD6: // DEC Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_DEC(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0xDE: // DEC Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_DEC(addressBus, Read(addressBus));
-                return 7;
+                return FinishStep(7);
 
             case 0x16: // ASL Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_ASL(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x1E: // ASL Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_ASL(addressBus, Read(addressBus));
-                return 7;
+                return FinishStep(7);
 
             case 0x56: // LSR Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_LSR(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x5E: // LSR Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_LSR(addressBus, Read(addressBus));
-                return 7;
+                return FinishStep(7);
 
             case 0x36: // ROL Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_ROL(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x3E: // ROL Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_ROL(addressBus, Read(addressBus));
-                return 7;
+                return FinishStep(7);
 
             case 0x76: // ROR Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
                 Op_ROR(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x7E: // ROR Absolute,X
                 ReadOperands_AbsoluteXAddressed();
                 Op_ROR(addressBus, Read(addressBus));
-                return 7;
+                return FinishStep(7);
 
             // Branch Instuctions
             case 0x10: // BPL
@@ -1200,7 +1202,6 @@ public class Emulator
                 return FinishStep(2);
         }
 
-        return FinishStep(cyclesThisStep);
     }
 
     public void Run()
@@ -1293,7 +1294,7 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/4_TheStack.nes";
+            string path = "/Users/damian/Programming/YANESEmu/5_Instructions1.nes";
 
             emulator.Reset(path);
             emulator.Run();
