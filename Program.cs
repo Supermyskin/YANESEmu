@@ -13,6 +13,7 @@ public class Emulator
     public byte stackPointer;
     public ushort addressBus;
     public bool futureCarry;
+    public long TotalCycles = 7;
 
     public bool CPU_Halted = false;
 
@@ -45,9 +46,6 @@ public class Emulator
 
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
-
-    public long TotalCycles = 7;
-
     public void Tracelogger(ushort pc, byte opcode)
     {
         byte p = 0;
@@ -271,6 +269,8 @@ public class Emulator
         byte Temp;
 
         Tracelogger(pcBeforeStep, opcode);
+
+        int cyclesThisStep = 0;
 
         switch (opcode)
         {
@@ -729,6 +729,9 @@ public class Emulator
                 CPU_Halted = true;
                 return 2;
         }
+
+        TotalCycles += cyclesThisStep; // Keep track of cumulative cycles
+        return cyclesThisStep;
     }
 
     public void Run()
@@ -807,6 +810,8 @@ public class Emulator
         byte pcLow = Read(0xFFFC);
         byte pcHigh = Read(0xFFFD);
         ProgramCounter = (ushort)((pcHigh * 0x100) + pcLow);
+
+        TotalCycles = 7;
 
         if (ProgramCounter == 0x0000 || ProgramCounter == 0xFFFF)
         {
