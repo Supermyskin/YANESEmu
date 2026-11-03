@@ -107,6 +107,47 @@ public class Emulator
         flag_Negative = false;
     }
 
+    void ReadOperands_ZeroPageXAddressed()
+    {
+        addressBus = (ushort)((Read(ProgramCounter++) + X) & 0xFF);
+    }
+
+    void ReadOperands_ZeroPageYAddressed()
+    {
+        addressBus = (ushort)((Read(ProgramCounter++) + Y) & 0xFF);
+    }
+
+    void ReadOperands_AbsoluteXAddressed()
+    {
+        ushort baseAddr = ReadWord(ProgramCounter);
+        ProgramCounter += 2;
+        addressBus = (ushort)(baseAddr + X);
+    }
+
+    void ReadOperands_AbsoluteYAddressed()
+    {
+        ushort baseAddr = ReadWord(ProgramCounter);
+        ProgramCounter += 2;
+        addressBus = (ushort)(baseAddr + Y);
+    }
+
+    void ReadOperands_IndirectXAddressed()
+    {
+        byte zp = (byte)(Read(ProgramCounter++) + X);
+        byte low = Read(zp);
+        byte high = Read((ushort)((zp + 1) & 0xFF));
+        addressBus = (ushort)((high << 8) | low);
+    }
+
+    void ReadOperands_IndirectYAddressed()
+    {
+        byte zp = Read(ProgramCounter++);
+        byte low = Read(zp);
+        byte high = Read((ushort)((zp + 1) & 0xFF));
+        ushort baseAddr = (ushort)((high << 8) | low);
+        addressBus = (ushort)(baseAddr + Y);
+    }
+
     private void SetZeroNegative(byte value)
     {
         flag_Zero = (value == 0);
