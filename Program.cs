@@ -202,6 +202,22 @@ public class Emulator
         SetZeroNegative(A);
     }
 
+    void Op_CPX(byte input)
+    {
+        int temp = X - input;
+        flag_Carry = X >= input;
+        flag_Zero = (temp & 0xFF) == 0;
+        flag_Negative = (temp & 0x80) != 0;
+    }
+
+    void Op_CPY(byte input)
+    {
+        int temp = Y - input;
+        flag_Carry = Y >= input;
+        flag_Zero = (temp & 0xFF) == 0;
+        flag_Negative = (temp & 0x80) != 0;
+    }
+
     void Op_SBC(byte Input)
     {
         Op_ADC((byte)~Input);
@@ -671,37 +687,121 @@ public class Emulator
                 Op_BIT(Read(addressBus));
                 return FinishStep(4);
 
-            case 0x00: //BRK
-                ProgramCounter++;
-                Push((byte)(ProgramCounter >> 8));
-                Push((byte)ProgramCounter);
-                Temp = 0;
-                Temp += (byte)(flag_Carry ? 1 : 0);
-                Temp += (byte)(flag_Zero ? 2 : 0);
-                Temp += (byte)(flag_InterruptDisable ? 4 : 0);
-                Temp += (byte)(flag_Decimal ? 8 : 0);
-                Temp += 0x10;
-                Temp += 0x20;
-                Temp += (byte)(flag_Overflow ? 0x40 : 0);
-                Temp += (byte)(flag_Negative ? 0x80 : 0);
-                Push(Temp);
-                Temp_Low = Read(0xFFFE);
-                Temp_High = Read(0xFFFF);
-                ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
-                return FinishStep(7);
 
-            case 0x40: //RTI
-                Temp = Pull();
-                flag_Carry = (Temp & 0x01) != 0;
-                flag_Zero = (Temp & 0x02) != 0;
-                flag_InterruptDisable = (Temp & 0x04) != 0;
-                flag_Decimal = (Temp & 0x08) != 0;
-                flag_Overflow = (Temp & 0x40) != 0;
-                flag_Negative = (Temp & 0x80) != 0;
-                Temp_Low = Pull();
-                Temp_High = Pull();
-                ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
-                return FinishStep(6);
+            case 0x89: // BIT Immediate (65C02 / Extended)
+                Op_BIT(Read(ProgramCounter++));
+                return 2;
+
+
+            case 0x00: // BRK Implied
+                ProgramCounter++; // BRK advances PC by 1 extra byte padding
+                Push((byte)(ProgramCounter >> 8));
+                Push((byte)(ProgramCounter & 0xFF));
+                
+                // Push status register with Break flag (bit 4) set to 1
+                byte brkFlags = 0;
+                if (flag_Carry)            brkFlags |= 0x01;
+                if (flag_Zero)             brkFlags |= 0x02;
+                if (flag_InterruptDisable) brkFlags |= 0x04;
+                if (flag_Decimal)          brkFlags |= 0x08;
+                brkFlags |= 0x10; // Break flag (B flag) set when pushed by BRK
+                brkFlags |= 0x20; // Unused bit always 1
+                if (flag_Overflow)         brkFlags |= 0x40;
+                if (flag_Negative)         brkFlags |= 0x80;
+                Push(brkFlags);
+
+                flag_InterruptDisable = true;
+                
+                // Jump to IRQ/BRK Vector ($FFFE/$FFFF)
+                byte brkLow = Read(0xFFFE);
+                byte brkHigh = Read(0xFFFD);
+                ProgramCounter = (ushort)((brkHigh << 8) | brkLow);
+                return 7;
+
+
+            case 0xE0: // CPX Immediate
+                Op_CPX(Read(ProgramCounter++));
+                return 2;
+
+            case 0xE4: // CPX Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_CPX(Read(addressBus));
+                return 3;
+
+            case 0xEC: // CPX Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_CPX(Read(addressBus));
+                return 4;
+
+
+            case 0xC0: // CPY Immediate
+                Op_CPY(Read(ProgramCounter++));
+                return 2;
+
+            case 0xC4: // CPY Zero Page
+                ReadOperands_ZeroPageAddressed();
+                Op_CPY(Read(addressBus));
+                return 3;
+
+            case 0xCC: // CPY Absolute
+                ReadOperands_AbsoluteAdressed();
+                Op_CPY(Read(addressBus));
+                return 4;
+
+
+            case 0x6C: // JMP Indirect ($XXXX)
+                {
+                    ushort ptr = ReadWord(ProgramCounter);
+                    ProgramCounter += 2;
+
+                    // Simulate 6502 Hardware Page Boundary Bug:
+                    // If low byte of address is 0xFF, fetching high byte wraps around within the same page
+                    ushort highPtr;
+                    if ((ptr & 0x00FF) == 0x00FF)
+                    {
+                        highPtr = (ushort)(ptr & 0xFF00); // Wrap back to start of page
+                    }
+                    else
+                    {
+                        highPtr = (ushort)(ptr + 1);
+                    }
+
+                    byte jmpLow = Read(ptr);
+                    byte jmpHigh = Read(highPtr);
+                    ProgramCounter = (ushort)((jmpHigh << 8) | jmpLow);
+                    return 5;
+                }
+
+
+            case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA: case 0xFA:
+                return 2;
+
+            case 0x80: case 0x82: case 0xC2: case 0xE2: case 0x04: case 0x44: case 0x64:
+                ProgramCounter++;
+                return 2;
+
+            case 0x0C:
+                ProgramCounter += 2;
+                return 4;
+
+            case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
+                ProgramCounter += 2;
+                return 4;
+
+            case 0x40: // RTI Implied
+            {
+                byte status = Pull();
+                flag_Carry = (status & 0x01) != 0;
+                flag_Zero = (status & 0x02) != 0;
+                flag_InterruptDisable = (status & 0x04) != 0;
+                flag_Decimal = (status & 0x08) != 0;
+                flag_Overflow = (status & 0x40) != 0;
+                flag_Negative = (status & 0x80) != 0;
+                byte rtiLow = Pull();
+                byte rtiHigh = Pull();
+                ProgramCounter = (ushort)((rtiHigh << 8) | rtiLow);
+                return 6;
+            }
 
             // Branch Instuctions
             case 0x10: // BPL
