@@ -63,7 +63,7 @@ public class Emulator
         // C000  4C F5 C5  JMP $C5F5                  A:00 X:00 Y:00 P:24 SP:FD CYC:  7
         Console.WriteLine(
             $"{pc:X4}  {b0:X2} {b1:X2} {b2:X2}  {name,-4} " +
-            $"\tA:{A:X2} X:{X:X2} Y:{Y:X2} P:{p:X2} SP:{stackPointer:X2} CYC:{TotalCycles}"
+            $"\tA:{A:X2} X:{X:X2} Y:{Y:X2} P:{p:X2} SP:{stackPointer:X2} CYC:{TotalCycles,3}"
         );
     }
 
@@ -257,6 +257,12 @@ public class Emulator
         }
     }
 
+    private int FinishStep(int cycles)
+    {
+        TotalCycles += cycles;
+        return cycles;
+    }
+
     public int Step()
     {
         if (CPU_Halted) return 0;
@@ -276,77 +282,77 @@ public class Emulator
         {
             case 0x02: // HLT
                 CPU_Halted = true;
-                return 2;
+                return FinishStep(2);
 
             case 0xA0: // LDY Immediate
                 Y = Read(ProgramCounter++);
                 SetZeroNegative(Y);
-                return 2;
+                return FinishStep(2);
 
             case 0xA2: // LDX Immediate
                 X = Read(ProgramCounter++);
                 SetZeroNegative(X);
-                return 2;
+                return FinishStep(2);
 
             case 0xA9: // LDA Immediate
                 A = Read(ProgramCounter++);
                 SetZeroNegative(A);
-                return 2;
+                return FinishStep(2);
 
             case 0x85: // STA Zero Page
                 targetAddr = Read(ProgramCounter++);
                 Write(targetAddr, A);
-                return 3;
+                return FinishStep(3);
 
             case 0xA5: // LDA Zero Page
                 targetAddr = Read(ProgramCounter++);
                 A = Read(targetAddr);
                 SetZeroNegative(A);
-                return 3;
+                return FinishStep(3);
 
             case 0x86: // STX Zero Page
                 targetAddr = Read(ProgramCounter++);
                 Write(targetAddr, X);
-                return 3;
+                return FinishStep(3);
 
             case 0x84: // STY Zero Page
                 targetAddr = Read(ProgramCounter++);
                 Write(targetAddr, Y);
-                return 3;
+                return FinishStep(3);
 
             case 0x8D: // STA Absolute
                 targetAddr = ReadWord(ProgramCounter);
                 ProgramCounter += 2;
                 Write(targetAddr, A);
-                return 4;
+                return FinishStep(4);
 
             case 0xAD: // LDA Absolute
                 targetAddr = ReadWord(ProgramCounter);
                 ProgramCounter += 2;
                 A = Read(targetAddr);
                 SetZeroNegative(A);
-                return 4;
+                return FinishStep(4);
 
             case 0x8E: // STX Absolute
                 targetAddr = ReadWord(ProgramCounter);
                 ProgramCounter += 2;
                 Write(targetAddr, X);
-                return 4;
+                return FinishStep(4);
 
             case 0x8C: // STY Absolute
                 targetAddr = ReadWord(ProgramCounter);
                 ProgramCounter += 2;
                 Write(targetAddr, Y);
-                return 4;
+                return FinishStep(4);
 
             case 0x48: //PHA
                 Push(A);
-                return 3;
+                return FinishStep(3);
 
             case 0x68: //PLA
                 A = Pull();
                 SetZeroNegative(A);
-                return 4;
+                return FinishStep(4);
             
             case 0x20: // JSR Absolute
                 Temp_Low = Read(ProgramCounter++);
@@ -354,101 +360,101 @@ public class Emulator
                 Push((byte)(ProgramCounter >> 8));
                 Push((byte)(ProgramCounter & 0xFF));
                 ProgramCounter = (ushort)((Temp_High << 8) | Temp_Low);
-                return 6;
+                return FinishStep(6);
 
             case 0x60: //RTS
                 Temp_Low = Pull();
                 Temp_High = Pull();
                 ProgramCounter = (ushort)(Temp_High*256 + Temp_Low);
                 ProgramCounter++;
-                return 6;
+                return FinishStep(6);
 
             case 0x4C: // JMP Absolute
                 Temp_Low = Read(ProgramCounter);
                 ProgramCounter++;
                 Temp_High = Read(ProgramCounter);
                 ProgramCounter = (ushort)((Temp_High * 256) + Temp_Low);
-                return 3;
+                return FinishStep(3);
 
             case 0xE8: // INX
                 X++;
                 SetZeroNegative(X);
-                return 2;
+                return FinishStep(2);
 
             case 0xCA: // DEX
                 X--;
                 SetZeroNegative(X);
-                return 2;
+                return FinishStep(2);
 
             case 0xC8: // INY
                 Y++;
                 SetZeroNegative(Y);
-                return 2;
+                return FinishStep(2);
 
             case 0x88: // DEY
                 Y--;
                 SetZeroNegative(Y);
-                return 2;
+                return FinishStep(2);
 
             case 0xAA: // TAX
                 X = A;
                 SetZeroNegative(X);
-                return 2;
+                return FinishStep(2);
 
             case 0x8A: // TXA
                 A = X;
                 SetZeroNegative(A);
-                return 2;
+                return FinishStep(2);
 
             case 0xA8: // TAY
                 Y = A;
                 SetZeroNegative(Y);
-                return 2;
+                return FinishStep(2);
 
             case 0x98: // TYA
                 A = Y;
                 SetZeroNegative(A);
-                return 2;
+                return FinishStep(2);
 
             case 0x9A: // TXS
                 stackPointer = X;
-                return 2;
+                return FinishStep(2);
 
             case 0xBA: // TSX
                 X = stackPointer;
                 SetZeroNegative(X);
-                return 2;
+                return FinishStep(2);
 
             case 0x38: // SEC
                 flag_Carry = true;
-                return 2;
+                return FinishStep(2);
 
             case 0x18: // CLC
                 flag_Carry = false;
-                return 2;
+                return FinishStep(2);
 
             case 0xB8: // CLV
                 flag_Overflow = false;
-                return 2;
+                return FinishStep(2);
 
             case 0x78: // SEI
                 flag_InterruptDisable = true;
-                return 2;
+                return FinishStep(2);
 
             case 0x58: // CLI
                 flag_InterruptDisable = false;
-                return 2;
+                return FinishStep(2);
 
             case 0xF8: // SED
                 flag_Decimal = true;
-                return 2;
+                return FinishStep(2);
 
             case 0xD8: // CLD
                 flag_Decimal = false;
-                return 2;
+                return FinishStep(2);
 
             case 0xEA: // NOP
-                return 2;
+                return FinishStep(2);
 
             case 0x08: //PHP
                 Temp = 0;
@@ -461,7 +467,7 @@ public class Emulator
                 Temp += (byte)(flag_Overflow ? 0x40 : 0);
                 Temp += (byte)(flag_Negative ? 0x80 : 0);
                 Push(Temp);
-                return 3;
+                return FinishStep(3);
 
             case 0x28: //PLP
                 Temp = Pull();
@@ -471,24 +477,24 @@ public class Emulator
                 flag_Decimal = (Temp & 8) != 0;
                 flag_Overflow = (Temp & 0x40) != 0;
                 flag_Negative = (Temp & 0x80) != 0;
-                return 3;
+                return FinishStep(3);
 
             case 0x0A: //ASL A
                 flag_Carry = A > 127;
                 A <<= 1;
                 flag_Zero = A == 0;
                 flag_Negative = A > 127;
-                return 2;
+                return FinishStep(2);
 
             case 0x06: //ASL Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_ASL(addressBus, Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0x0E: //ASL Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ASL(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x2A: // ROL A
                 bool futureCarry = (A >= 0x80);
@@ -500,34 +506,34 @@ public class Emulator
                 flag_Carry = futureCarry;
                 flag_Negative = (A >= 0x80);
                 flag_Zero = (A == 0);
-                return 2;
+                return FinishStep(2);
 
             case 0x26: // ROL Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_ROL(addressBus, Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0x2E: // ROL Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ROL(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x4A: // LSR A
                 flag_Carry = (A & 0x01) != 0;
                 A >>= 1;
                 flag_Zero = (A == 0);
                 flag_Negative = false;
-                return 2;
+                return FinishStep(2);
 
             case 0x46: // LSR Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_LSR(addressBus, Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0x4E: // LSR Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_LSR(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x6A: // ROR A
                 futureCarry = (A & 0x01) != 0;
@@ -539,131 +545,131 @@ public class Emulator
                 flag_Carry = futureCarry;
                 flag_Zero = A == 0;
                 flag_Negative = A >= 0x80;
-                return 2;
+                return FinishStep(2);
 
             case 0x66: // ROR Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_ROR(addressBus, Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0x6E: // ROR Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ROR(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0xE6: // INC Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_INC(addressBus, Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0xEE: // INC Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_INC(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0xC6: // DEC Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_DEC(addressBus, Read(addressBus));
-                return 5;
+                return FinishStep(5);
 
             case 0xCE: // DEC Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_DEC(addressBus, Read(addressBus));
-                return 6;
+                return FinishStep(6);
 
             case 0x09: // ORA Immediate
                 Op_ORA(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0x05: // ORA Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_ORA(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0x0D: // ORA Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ORA(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x29: // AND Immediate
                 Op_AND(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0x25: // AND Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_AND(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0x2D: // AND Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_AND(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x49: // EOR Immediate
                 Op_EOR(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0x45: // EOR Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_EOR(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0x4D: // EOR Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_EOR(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x69: // ADC Immediate
                 Op_ADC(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0x65: // ADC Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_ADC(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0x6D: // ADC Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_ADC(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0xE9: // SBC Immediate
                 Op_SBC(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0xE5: // SBC Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_SBC(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0xED: // SBC Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_SBC(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0xC9: // CMP Immediate
                 Op_CMP(Read(ProgramCounter++));
-                return 2;
+                return FinishStep(2);
 
             case 0xC5: // CMP Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_CMP(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0xCD: // CMP Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_CMP(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x24: // BIT Zero Page
                 ReadOperands_ZeroPageAddressed();
                 Op_BIT(Read(addressBus));
-                return 3;
+                return FinishStep(3);
 
             case 0x2C: // BIT Absolute
                 ReadOperands_AbsoluteAdressed();
                 Op_BIT(Read(addressBus));
-                return 4;
+                return FinishStep(4);
 
             case 0x00: //BRK
                 ProgramCounter++;
@@ -682,7 +688,7 @@ public class Emulator
                 Temp_Low = Read(0xFFFE);
                 Temp_High = Read(0xFFFF);
                 ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
-                return 7;
+                return FinishStep(7);
 
             case 0x40: //RTI
                 Temp = Pull();
@@ -695,7 +701,7 @@ public class Emulator
                 Temp_Low = Pull();
                 Temp_High = Pull();
                 ProgramCounter = (ushort)((Temp_High * 0x100) + Temp_Low);
-                return 6;
+                return FinishStep(6);
 
             // Branch Instuctions
             case 0x10: // BPL
@@ -721,17 +727,16 @@ public class Emulator
                             branchCycles++;
                         }
                     }
-                    return branchCycles;
+                    return FinishStep(branchCycles);
                 }
 
             default:
                 Console.WriteLine($"Unknown opcode 0x{opcode:X2} at PC: 0x{(ProgramCounter - 1):X4}");
                 CPU_Halted = true;
-                return 2;
+                return FinishStep(2);
         }
 
-        TotalCycles += cyclesThisStep; // Keep track of cumulative cycles
-        return cyclesThisStep;
+        return FinishStep(cyclesThisStep);
     }
 
     public void Run()
