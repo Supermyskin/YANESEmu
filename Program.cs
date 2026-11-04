@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Microsoft.AspNetCore.Authentication;
+using System.Drawing;
 
 public class Emulator
 {
@@ -47,6 +48,10 @@ public class Emulator
 
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
+    public byte[] CHRData = new byte[0x2000];
+
+    Bitmap bitmap = new Bitmap(256, 128);
+
     public void Tracelogger(ushort pc, byte opcode)
     {
         byte p = 0;
@@ -57,14 +62,16 @@ public class Emulator
         p |= 0x20;
         if (flag_Overflow)         p |= 0x40;
         if (flag_Negative)         p |= 0x80;
+        string flags = $"{(flag_Negative ? 'N' : 'n')}{(flag_Overflow ? 'V' : 'v')}--" +
+            $"{(flag_Decimal ? 'D' : 'd')}{(flag_InterruptDisable ? 'I' : 'i')}" +
+            $"{(flag_Zero ? 'Z' : 'z')}{(flag_Carry ? 'C' : 'c')}";
         byte b0 = opcode;
         byte b1 = Read((ushort)(pc + 1));
         byte b2 = Read((ushort)(pc + 2));
         string name = OpCodeNames[opcode];
-        // C000  4C F5 C5  JMP $C5F5                  A:00 X:00 Y:00 P:24 SP:FD CYC:  7
         Console.WriteLine(
             $"{pc:X4}  {b0:X2} {b1:X2} {b2:X2}  {name,-4} " +
-            $"\tA:{A:X2} X:{X:X2} Y:{Y:X2} P:{p:X2} SP:{stackPointer:X2} CYC:{TotalCycles,3}"
+            $"\tA:{A:X2} X:{X:X2} Y:{Y:X2} P:{p:X2} {flags} SP:{stackPointer:X2} CYC:{TotalCycles,3}"
         );
     }
 
@@ -536,7 +543,7 @@ public class Emulator
                 flag_Decimal = (Temp & 8) != 0;
                 flag_Overflow = (Temp & 0x40) != 0;
                 flag_Negative = (Temp & 0x80) != 0;
-                return FinishStep(3);
+                return FinishStep(4);
 
             case 0x0A: //ASL A
                 flag_Carry = A > 127;
@@ -1204,6 +1211,25 @@ public class Emulator
 
     }
 
+    public void EmulatePPU()
+    {
+        for (int table = 0; table < 2; table++) {
+            for (int row = 0; row < 16; row++)
+            {
+                for (int column = 0; column < 16; column++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        for (int x = 0; x < 8; x++)
+                        {
+                            //TODO: Draw Pixel
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public void Run()
     {
         while (!CPU_Halted)
@@ -1294,7 +1320,7 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/5_Instructions1.nes";
+            string path = "/Users/damian/Programming/YANESEmu/6_Instructions2.nes";
 
             emulator.Reset(path);
             emulator.Run();
