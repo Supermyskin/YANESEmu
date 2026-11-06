@@ -49,6 +49,7 @@ public class Emulator
     public byte[] RAM = new byte[0x800];
     public byte[] ROM = new byte[0x8000];
     public byte[] CHRData = new byte[0x2000];
+    public byte[] CHRROM = new byte[0x2000];
 
     Bitmap bitmap = new Bitmap(256, 128);
 
@@ -1220,9 +1221,14 @@ public class Emulator
                 {
                     for (int y = 0; y < 8; y++)
                     {
+                        byte lowByte = CHRROM[y + column*16 + row * 256 + table * 4096];
+                        byte highByte = CHRROM[8 + y + column*16 + row * 256 + table * 4096];
                         for (int x = 0; x < 8; x++)
                         {
-                            //TODO: Draw Pixel
+                            int TwoBit = ((lowByte>>(7-x)) & 1) == 1 ? 1 : 0;
+                            TwoBit += ((highByte >> (7-x)) & 1) == 1 ? 2 : 0;
+                            Color color = Color.FromArgb(255, TwoBit * 85, TwoBit * 85, TwoBit * 85);
+                            bitmap.SetPixel(x + column*8 + table*128, y + row*8, color);
                         }
                     }
                 }
@@ -1313,6 +1319,20 @@ public class Emulator
         {
             ProgramCounter = 0x8000;
         }
+
+        int chrPages = fileBytes[5];
+        int chrSize = chrPages * 8192;
+        int chrOffset = prgOffset + prgSize;
+        CHRROM = new byte[8192];
+
+        if (chrPages > 0)
+        {
+            Array.Copy(fileBytes, chrOffset, CHRROM, 0, 8192);
+        }
+        else
+        {
+            Array.Clear(CHRROM, 0, CHRROM.Length);
+        }
     }
 
     class Program
@@ -1320,7 +1340,7 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/6_Instructions2.nes";
+            string path = "/Users/damian/Programming/YANESEmu/7_Graphics.nes";
 
             emulator.Reset(path);
             emulator.Run();
