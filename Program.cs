@@ -1221,8 +1221,8 @@ public class Emulator
                 {
                     for (int y = 0; y < 8; y++)
                     {
-                        byte lowByte = CHRROM[y + column*16 + row * 256 + table * 4096];
-                        byte highByte = CHRROM[8 + y + column*16 + row * 256 + table * 4096];
+                        byte lowByte = CHRData[y + column*16 + row * 256 + table * 4096];
+                        byte highByte = CHRData[8 + y + column*16 + row * 256 + table * 4096];
                         for (int x = 0; x < 8; x++)
                         {
                             int TwoBit = ((lowByte>>(7-x)) & 1) == 1 ? 1 : 0;
@@ -1323,15 +1323,20 @@ public class Emulator
         int chrPages = fileBytes[5];
         int chrSize = chrPages * 8192;
         int chrOffset = prgOffset + prgSize;
-        CHRROM = new byte[8192];
+        Array.Clear(CHRData, 0, CHRData.Length);
+        Array.Clear(CHRROM, 0, CHRROM.Length);
 
         if (chrPages > 0)
         {
-            Array.Copy(fileBytes, chrOffset, CHRROM, 0, 8192);
-        }
-        else
-        {
-            Array.Clear(CHRROM, 0, CHRROM.Length);
+            if (fileBytes.Length < chrOffset + chrSize)
+            {
+                Console.WriteLine("Error: ROM file is incomplete (CHR data is truncated)");
+                return;
+            }
+
+            int bytesToLoad = Math.Min(chrSize, CHRData.Length);
+            Array.Copy(fileBytes, chrOffset, CHRData, 0, bytesToLoad);
+            Array.Copy(CHRData, CHRROM, CHRData.Length);
         }
     }
 
