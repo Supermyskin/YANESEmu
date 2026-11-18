@@ -11,6 +11,9 @@ public class Emulator
     public byte Y;
     public byte opcode;
 
+    public WriteLatch;
+    public ushort Trans
+
     public byte stackPointer;
     public ushort addressBus;
     public bool futureCarry;
@@ -1228,7 +1231,9 @@ public class Emulator
                             int TwoBit = ((lowByte>>(7-x)) & 1) == 1 ? 1 : 0;
                             TwoBit += ((highByte >> (7-x)) & 1) == 1 ? 2 : 0;
                             Color color = Color.FromArgb(255, TwoBit * 85, TwoBit * 85, TwoBit * 85);
+                            #pragma warning disable CA1416
                             bitmap.SetPixel(x + column*8 + table*128, y + row*8, color);
+                            #pragma warning restore CA1416
                         }
                     }
                 }
