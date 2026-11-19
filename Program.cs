@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using Microsoft.AspNetCore.Authentication;
 using System.Drawing;
 
 public class Emulator
@@ -14,6 +13,23 @@ public class Emulator
     public bool writeLatch;
     public ushort vramAddr;
     public ushort tramAddr;
+    private byte ppuControl;
+    private byte ppuMask;
+    private byte ppuStatus;
+    private byte oamAddress;
+    private byte ppuReadBuffer;
+    private byte fineX;
+    private byte scrollX;
+    private byte scrollY;
+    private int ppuScanline = 261;
+    private int ppuDot;
+    public bool NMIRequested { get; private set; }
+    private bool verticalNametableMirroring;
+    private bool chrRam;
+    private readonly byte[] ppuRegisters = new byte[8];
+    private readonly byte[] nametableRam = new byte[0x800];
+    private readonly byte[] paletteRam = new byte[0x20];
+    private readonly byte[] oam = new byte[0x100];
 
     public byte stackPointer;
     public ushort addressBus;
@@ -55,7 +71,7 @@ public class Emulator
     public byte[] CHRData = new byte[0x2000];
     public byte[] CHRROM = new byte[0x2000];
 
-    Bitmap bitmap = new Bitmap(256, 128);
+    public Bitmap bitmap = new Bitmap(256, 240);
 
     public void Tracelogger(ushort pc, byte opcode)
     {
@@ -91,7 +107,137 @@ public class Emulator
             int romIndex = (addr - 0x8000) % ROM.Length;
             return ROM[romIndex];
         }
+        if (addr is >= 0x2000 and < 0x4000)
+        {
+            return ReadPpuRegister((ushort)(0x2000 | (addr & 7)));
+        }
         return 0;
+    }
+
+    private byte ReadPpuRegister(ushort register)
+    {
+        switch (register)
+        {
+            case 0x2002:
+                byte status = (byte)((ppuStatus & 0xE0) | (ppuRegisters[2] & 0x1F));
+                ppuStatus &= 0x7F;
+                writeLatch = false;
+                return status;
+            case 0x2004:
+                return oam[oamAddress];
+            case 0x2007:
+                ushort address = (ushort)(vramAddr & 0x3FFF);
+                byte value = ReadPpuMemory(address);
+                byte result = address >= 0x3F00 ? value : ppuReadBuffer;
+                ppuReadBuffer = ReadPpuMemory((ushort)((address - (address >= 0x1000 ? 0x1000 : 0)) & 0x3FFF));
+                IncrementVramAddress();
+                return result;
+            default:
+                return ppuRegisters[register & 7];
+        }
+    }
+
+    private void WritePpuRegister(ushort register, byte value)
+    {
+        ppuRegisters[register & 7] = value;
+        switch (register)
+        {
+            case 0x2000:
+                ppuControl = value;
+                tramAddr = (ushort)((tramAddr & 0xF3FF) | ((value & 3) << 10));
+                if ((ppuStatus & 0x80) != 0 && (ppuControl & 0x80) != 0) NMIRequested = true;
+                break;
+            case 0x2001:
+                ppuMask = value;
+                break;
+            case 0x2003:
+                oamAddress = value;
+                break;
+            case 0x2004:
+                oam[oamAddress++] = value;
+                break;
+            case 0x2005:
+                if (!writeLatch)
+                {
+                    scrollX = value;
+                    fineX = (byte)(value & 7);
+                    tramAddr = (ushort)((tramAddr & 0xFFE0) | (value >> 3));
+                }
+                else
+                {
+                    scrollY = value;
+                    tramAddr = (ushort)((tramAddr & 0x8FFF) | ((value & 7) << 12));
+                    tramAddr = (ushort)((tramAddr & 0xFC1F) | ((value & 0xF8) << 2));
+                }
+                writeLatch = !writeLatch;
+                break;
+            case 0x2006:
+                if (!writeLatch)
+                {
+                    tramAddr = (ushort)((tramAddr & 0x00FF) | ((value & 0x3F) << 8));
+                }
+                else
+                {
+                    tramAddr = (ushort)((tramAddr & 0x7F00) | value);
+                    vramAddr = tramAddr;
+                }
+                writeLatch = !writeLatch;
+                break;
+            case 0x2007:
+                WritePpuMemory((ushort)(vramAddr & 0x3FFF), value);
+                IncrementVramAddress();
+                break;
+        }
+    }
+
+    private void IncrementVramAddress()
+    {
+        vramAddr = (ushort)((vramAddr + ((ppuControl & 4) != 0 ? 32 : 1)) & 0x7FFF);
+    }
+
+    private byte ReadPpuMemory(ushort address)
+    {
+        address &= 0x3FFF;
+        if (address < 0x2000)
+        {
+            return CHRData[address];
+        }
+        if (address < 0x3F00)
+        {
+            int index = (address - 0x2000) & 0x0FFF;
+            int table = index >> 10;
+            int offset = index & 0x3FF;
+            int physicalTable = verticalNametableMirroring ? table & 1 : table >> 1;
+            return nametableRam[physicalTable * 0x400 + offset];
+        }
+        return paletteRam[PaletteIndex(address)];
+    }
+
+    private void WritePpuMemory(ushort address, byte value)
+    {
+        address &= 0x3FFF;
+        if (address < 0x2000)
+        {
+            if (chrRam) CHRData[address] = value;
+            return;
+        }
+        if (address < 0x3F00)
+        {
+            int index = (address - 0x2000) & 0x0FFF;
+            int table = index >> 10;
+            int offset = index & 0x3FF;
+            int physicalTable = verticalNametableMirroring ? table & 1 : table >> 1;
+            nametableRam[physicalTable * 0x400 + offset] = value;
+            return;
+        }
+        paletteRam[PaletteIndex(address)] = value;
+    }
+
+    private static int PaletteIndex(ushort address)
+    {
+        int index = (address - 0x3F00) & 0x1F;
+        if ((index & 0x13) == 0x10) index -= 0x10;
+        return index;
     }
 
     public ushort ReadWord(ushort addr)
@@ -106,6 +252,10 @@ public class Emulator
         if (addr < 0x2000)
         {
             RAM[addr % 0x800] = value;
+        }
+        else if (addr is >= 0x2000 and < 0x4000)
+        {
+            WritePpuRegister((ushort)(0x2000 | (addr & 7)), value);
         }
     }
 
@@ -247,7 +397,7 @@ public class Emulator
     {
         A &= Input;
         flag_Negative = A >= 0x80;
-        flag_Zero = A == 0x00; 
+        flag_Zero = A == 0x00;
     }
 
     void Op_ADC(byte Input)
@@ -299,7 +449,7 @@ public class Emulator
     {
         A ^= Input;
         flag_Negative = A >= 0x80;
-        flag_Zero = A == 0x00; 
+        flag_Zero = A == 0x00;
     }
 
     public void Push(byte value)
@@ -333,12 +483,108 @@ public class Emulator
     private int FinishStep(int cycles)
     {
         TotalCycles += cycles;
+        ClockPpu(cycles * 3);
         return cycles;
+    }
+
+    private void ClockPpu(int cycles)
+    {
+        for (int i = 0; i < cycles; i++)
+        {
+            ppuDot++;
+            if (ppuScanline == 241 && ppuDot == 2)
+            {
+                ppuStatus |= 0x80;
+                RenderBackground();
+                if ((ppuControl & 0x80) != 0) NMIRequested = true;
+            }
+            else if (ppuScanline == 261 && ppuDot == 2)
+            {
+                ppuStatus &= 0x1F;
+                NMIRequested = false;
+            }
+
+            if (ppuDot >= 341)
+            {
+                ppuDot = 0;
+                ppuScanline++;
+                if (ppuScanline >= 262) ppuScanline = 0;
+            }
+        }
+    }
+
+    private void RenderBackground()
+    {
+        if ((ppuMask & 0x08) == 0)
+        {
+            Color backdrop = GetNesColor(ReadPpuMemory(0x3F00));
+            using Graphics graphics = Graphics.FromImage(bitmap);
+            graphics.Clear(backdrop);
+            return;
+        }
+
+        int baseNametable = ppuControl & 3;
+        int patternBase = (ppuControl & 0x10) != 0 ? 0x1000 : 0;
+        for (int y = 0; y < 240; y++)
+        {
+            int worldY = (y + scrollY) % 480;
+            int ntY = worldY / 240;
+            int tileY = (worldY % 240) / 8;
+            int pixelY = worldY & 7;
+            for (int x = 0; x < 256; x++)
+            {
+                if (x < 8 && (ppuMask & 0x02) == 0)
+                {
+                    bitmap.SetPixel(x, y, GetNesColor(ReadPpuMemory(0x3F00)));
+                    continue;
+                }
+                int worldX = (x + scrollX) % 512;
+                int ntX = worldX / 256;
+                int tileX = (worldX % 256) / 8;
+                int pixelX = worldX & 7;
+                int nametable = (baseNametable + ntY * 2 + ntX) & 3;
+                ushort ntAddress = (ushort)(0x2000 + nametable * 0x400 + tileY * 32 + tileX);
+                byte tile = ReadPpuMemory(ntAddress);
+                byte low = ReadPpuMemory((ushort)(patternBase + tile * 16 + pixelY));
+                byte high = ReadPpuMemory((ushort)(patternBase + tile * 16 + pixelY + 8));
+                int colorIndex = ((low >> (7 - pixelX)) & 1) | (((high >> (7 - pixelX)) & 1) << 1);
+                int palette = 0;
+                if (colorIndex != 0)
+                {
+                    ushort attributeAddress = (ushort)(0x23C0 + nametable * 0x400 + (tileY / 4) * 8 + tileX / 4);
+                    byte attribute = ReadPpuMemory(attributeAddress);
+                    int shift = ((tileY & 2) << 1) | (tileX & 2);
+                    palette = (attribute >> shift) & 3;
+                }
+                byte nesColor = ReadPpuMemory((ushort)(0x3F00 + palette * 4 + colorIndex));
+                bitmap.SetPixel(x, y, GetNesColor(nesColor));
+            }
+        }
+    }
+
+    private static Color GetNesColor(byte index)
+    {
+        int shade = (index & 0x0F) * 17;
+        return Color.FromArgb(shade, shade, shade);
     }
 
     public int Step()
     {
         if (CPU_Halted) return FinishStep(0);
+
+        if (NMIRequested)
+        {
+            Push((byte)(ProgramCounter >> 8));
+            Push((byte)ProgramCounter);
+            byte status = (byte)((flag_Carry ? 1 : 0) | (flag_Zero ? 2 : 0) |
+                (flag_InterruptDisable ? 4 : 0) | (flag_Decimal ? 8 : 0) | 0x20 |
+                (flag_Overflow ? 0x40 : 0) | (flag_Negative ? 0x80 : 0));
+            Push(status);
+            flag_InterruptDisable = true;
+            ProgramCounter = ReadWord(0xFFFA);
+            NMIRequested = false;
+            return FinishStep(7);
+        }
 
         ushort pcBeforeStep = ProgramCounter;
         opcode = Read(ProgramCounter++);
@@ -424,7 +670,7 @@ public class Emulator
                 A = Pull();
                 SetZeroNegative(A);
                 return FinishStep(4);
-            
+
             case 0x20: // JSR Absolute
                 Temp_Low = Read(ProgramCounter++);
                 Temp_High = Read(ProgramCounter);
@@ -752,7 +998,7 @@ public class Emulator
                 ProgramCounter++; // BRK advances PC by 1 extra byte padding
                 Push((byte)(ProgramCounter >> 8));
                 Push((byte)(ProgramCounter & 0xFF));
-                
+
                 // Push status register with Break flag (bit 4) set to 1
                 byte brkFlags = 0;
                 if (flag_Carry)            brkFlags |= 0x01;
@@ -766,7 +1012,7 @@ public class Emulator
                 Push(brkFlags);
 
                 flag_InterruptDisable = true;
-                
+
                 // Jump to IRQ/BRK Vector ($FFFE/$FFFF)
                 byte brkLow = Read(0xFFFE);
                 byte brkHigh = Read(0xFFFF);
@@ -1250,12 +1496,12 @@ public class Emulator
         }
     }
 
-    public void Reset(string filepath)
+    public bool Reset(string filepath)
     {
         if (!File.Exists(filepath))
         {
             Console.WriteLine($"Error: File not found at {filepath}");
-            return;
+            return false;
         }
 
         byte[] fileBytes = File.ReadAllBytes(filepath);
@@ -1267,10 +1513,38 @@ public class Emulator
             fileBytes[3] != 0x1A)
         {
             Console.WriteLine("Error: Invalid iNES ROM file");
-            return;
+            return false;
+        }
+
+        int mapper = (fileBytes[6] >> 4) | (fileBytes[7] & 0xF0);
+        if (mapper != 0 || (fileBytes[7] & 0x0C) == 0x08 ||
+            fileBytes[4] is not (1 or 2) || fileBytes[5] > 1)
+        {
+            Console.WriteLine("Error: Only iNES NROM ROMs with 1–2 PRG banks and up to 1 CHR bank are supported");
+            return false;
         }
 
         stackPointer = 0xFD;
+        verticalNametableMirroring = (fileBytes[6] & 1) != 0;
+        chrRam = fileBytes[5] == 0;
+        Array.Clear(ppuRegisters, 0, ppuRegisters.Length);
+        Array.Clear(nametableRam, 0, nametableRam.Length);
+        Array.Clear(paletteRam, 0, paletteRam.Length);
+        Array.Clear(oam, 0, oam.Length);
+        ppuControl = 0;
+        ppuMask = 0;
+        ppuStatus = 0;
+        oamAddress = 0;
+        ppuReadBuffer = 0;
+        fineX = 0;
+        scrollX = 0;
+        scrollY = 0;
+        ppuScanline = 261;
+        ppuDot = 0;
+        NMIRequested = false;
+        writeLatch = false;
+        vramAddr = 0;
+        tramAddr = 0;
         int prgPages = fileBytes[4];
         int prgSize = prgPages * 16384;
         int prgOffset = 0x10;
@@ -1283,7 +1557,7 @@ public class Emulator
         if (fileBytes.Length < prgOffset + prgSize)
         {
             Console.WriteLine("Error: ROM file is incomplete");
-            return;
+            return false;
         }
 
         Array.Clear(ROM, 0, ROM.Length);
@@ -1337,13 +1611,15 @@ public class Emulator
             if (fileBytes.Length < chrOffset + chrSize)
             {
                 Console.WriteLine("Error: ROM file is incomplete (CHR data is truncated)");
-                return;
+                return false;
             }
 
             int bytesToLoad = Math.Min(chrSize, CHRData.Length);
             Array.Copy(fileBytes, chrOffset, CHRData, 0, bytesToLoad);
             Array.Copy(CHRData, CHRROM, CHRData.Length);
         }
+
+        return true;
     }
 
     class Program
@@ -1351,9 +1627,14 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = "/Users/damian/Programming/YANESEmu/7_Graphics.nes";
+            string path = args.Length > 0
+                ? args[0]
+                : Path.Combine(Directory.GetCurrentDirectory(), "7_Graphics.nes");
 
-            emulator.Reset(path);
+            if (!emulator.Reset(path))
+            {
+                return;
+            }
             emulator.Run();
 
             Console.WriteLine($"Emulator halted. Final PC: 0x{emulator.ProgramCounter:X4}");
