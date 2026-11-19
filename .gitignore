@@ -3,3 +3,6 @@
 /.idea
 /obj
 /bin
+**/obj/
+**/bin/
+frame.bmp
