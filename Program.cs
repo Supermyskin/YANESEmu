@@ -11,8 +11,9 @@ public class Emulator
     public byte Y;
     public byte opcode;
 
-    public WriteLatch;
-    public ushort Trans
+    public bool writeLatch;
+    public ushort vramAddr;
+    public ushort tramAddr;
 
     public byte stackPointer;
     public ushort addressBus;
