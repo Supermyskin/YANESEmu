@@ -1,6 +1,7 @@
 using System;
 using System.IO;
-using System.Drawing;
+using System.Diagnostics;
+using System.Text;
 
 public class Emulator
 {
@@ -24,6 +25,7 @@ public class Emulator
     private int ppuScanline = 261;
     private int ppuDot;
     public bool NMIRequested { get; private set; }
+    public bool TraceEnabled { get; set; }
     private bool verticalNametableMirroring;
     private bool chrRam;
     private readonly byte[] ppuRegisters = new byte[8];
@@ -71,10 +73,20 @@ public class Emulator
     public byte[] CHRData = new byte[0x2000];
     public byte[] CHRROM = new byte[0x2000];
 
-    public Bitmap bitmap = new Bitmap(256, 240);
+    private readonly uint[] frameBuffer = new uint[256 * 240];
+    private long lastDisplayTicks;
+    private bool terminalFrameStarted;
+    private static readonly uint[] NesPalette =
+    {
+        0x666666,0x002A88,0x1412A7,0x3B00A4,0x5C007E,0x6E0040,0x6C0700,0x561D00,0x333500,0x0B4800,0x005200,0x004F08,0x00404D,0x000000,0x000000,0x000000,
+        0xADADAD,0x155FD9,0x4240FF,0x7527FE,0xA01ACC,0xB71E7B,0xB53120,0x994E00,0x6B6D00,0x388700,0x0C9300,0x008F32,0x007C8D,0x000000,0x000000,0x000000,
+        0xFFFEFF,0x64B0FF,0x9290FF,0xC676FF,0xF36AFF,0xFE6ECC,0xFE8170,0xEA9E22,0xBCBE00,0x88D800,0x5CE430,0x45E082,0x48CDDE,0x4F4F4F,0x000000,0x000000,
+        0xFFFEFF,0xC0DFFF,0xD3D2FF,0xE8C8FF,0xFBC2FF,0xFEC4EA,0xFECCC5,0xF7D8A5,0xE4E594,0xCFEE96,0xBDF4AB,0xB3F3CC,0xB5EBF2,0xB8B8B8,0x000000,0x000000
+    };
 
     public void Tracelogger(ushort pc, byte opcode)
     {
+        if (!TraceEnabled) return;
         byte p = 0;
         if (flag_Carry)            p |= 0x01;
         if (flag_Zero)             p |= 0x02;
@@ -517,9 +529,8 @@ public class Emulator
     {
         if ((ppuMask & 0x08) == 0)
         {
-            Color backdrop = GetNesColor(ReadPpuMemory(0x3F00));
-            using Graphics graphics = Graphics.FromImage(bitmap);
-            graphics.Clear(backdrop);
+            Array.Fill(frameBuffer, GetNesColor(ReadPpuMemory(0x3F00)));
+            DisplayFrame();
             return;
         }
 
@@ -535,7 +546,7 @@ public class Emulator
             {
                 if (x < 8 && (ppuMask & 0x02) == 0)
                 {
-                    bitmap.SetPixel(x, y, GetNesColor(ReadPpuMemory(0x3F00)));
+                    frameBuffer[y * 256 + x] = GetNesColor(ReadPpuMemory(0x3F00));
                     continue;
                 }
                 int worldX = (x + scrollX) % 512;
@@ -557,15 +568,93 @@ public class Emulator
                     palette = (attribute >> shift) & 3;
                 }
                 byte nesColor = ReadPpuMemory((ushort)(0x3F00 + palette * 4 + colorIndex));
-                bitmap.SetPixel(x, y, GetNesColor(nesColor));
+                frameBuffer[y * 256 + x] = GetNesColor(nesColor);
             }
         }
+        DisplayFrame();
     }
 
-    private static Color GetNesColor(byte index)
+    private static uint GetNesColor(byte index)
     {
-        int shade = (index & 0x0F) * 17;
-        return Color.FromArgb(shade, shade, shade);
+        return NesPalette[index & 0x3F];
+    }
+
+    private void DisplayFrame()
+    {
+        if (Console.IsOutputRedirected || TraceEnabled) return;
+        long now = Stopwatch.GetTimestamp();
+        if (lastDisplayTicks != 0 && Stopwatch.GetElapsedTime(lastDisplayTicks, now).TotalMilliseconds < 66) return;
+        lastDisplayTicks = now;
+
+        StringBuilder output = new(64 * 120 * 48);
+        output.Append(terminalFrameStarted ? "\x1b[H" : "\x1b[2J\x1b[H");
+        terminalFrameStarted = true;
+        for (int y = 0; y < 240; y += 2)
+        {
+            for (int x = 0; x < 256; x += 4)
+            {
+                uint top = AveragePixels(y, x);
+                uint bottom = AveragePixels(y + 1, x);
+                output.Append("\x1b[38;2;").Append((top >> 16) & 255).Append(';').Append((top >> 8) & 255).Append(';').Append(top & 255);
+                output.Append("m\x1b[48;2;").Append((bottom >> 16) & 255).Append(';').Append((bottom >> 8) & 255).Append(';').Append(bottom & 255);
+                output.Append("m▀");
+            }
+            output.Append("\x1b[0m\n");
+        }
+        Console.Write(output.ToString());
+    }
+
+    private uint AveragePixels(int y, int x)
+    {
+        uint red = 0;
+        uint green = 0;
+        uint blue = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            uint color = frameBuffer[y * 256 + x + i];
+            red += (color >> 16) & 255;
+            green += (color >> 8) & 255;
+            blue += color & 255;
+        }
+        return ((red / 4) << 16) | ((green / 4) << 8) | (blue / 4);
+    }
+
+    private void SaveFrame(string path)
+    {
+        const int width = 256;
+        const int height = 240;
+        const int rowSize = width * 3;
+        int paddedRowSize = (rowSize + 3) & ~3;
+        int imageSize = paddedRowSize * height;
+        using FileStream stream = File.Create(path);
+        using BinaryWriter writer = new(stream);
+        writer.Write((byte)'B');
+        writer.Write((byte)'M');
+        writer.Write(54 + imageSize);
+        writer.Write(0);
+        writer.Write(54);
+        writer.Write(40);
+        writer.Write(width);
+        writer.Write(height);
+        writer.Write((short)1);
+        writer.Write((short)24);
+        writer.Write(0);
+        writer.Write(imageSize);
+        writer.Write(2835);
+        writer.Write(2835);
+        writer.Write(0);
+        writer.Write(0);
+        for (int y = height - 1; y >= 0; y--)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                uint color = frameBuffer[y * width + x];
+                writer.Write((byte)color);
+                writer.Write((byte)(color >> 8));
+                writer.Write((byte)(color >> 16));
+            }
+            for (int pad = rowSize; pad < paddedRowSize; pad++) writer.Write((byte)0);
+        }
     }
 
     public int Step()
@@ -1464,28 +1553,7 @@ public class Emulator
 
     public void EmulatePPU()
     {
-        for (int table = 0; table < 2; table++) {
-            for (int row = 0; row < 16; row++)
-            {
-                for (int column = 0; column < 16; column++)
-                {
-                    for (int y = 0; y < 8; y++)
-                    {
-                        byte lowByte = CHRData[y + column*16 + row * 256 + table * 4096];
-                        byte highByte = CHRData[8 + y + column*16 + row * 256 + table * 4096];
-                        for (int x = 0; x < 8; x++)
-                        {
-                            int TwoBit = ((lowByte>>(7-x)) & 1) == 1 ? 1 : 0;
-                            TwoBit += ((highByte >> (7-x)) & 1) == 1 ? 2 : 0;
-                            Color color = Color.FromArgb(255, TwoBit * 85, TwoBit * 85, TwoBit * 85);
-                            #pragma warning disable CA1416
-                            bitmap.SetPixel(x + column*8 + table*128, y + row*8, color);
-                            #pragma warning restore CA1416
-                        }
-                    }
-                }
-            }
-        }
+        RenderBackground();
     }
 
     public void Run()
@@ -1494,6 +1562,10 @@ public class Emulator
         {
             Step();
         }
+        RenderBackground();
+        string framePath = Path.Combine(Directory.GetCurrentDirectory(), "frame.bmp");
+        SaveFrame(framePath);
+        Console.WriteLine($"Frame saved to {framePath}");
     }
 
     public bool Reset(string filepath)
@@ -1627,14 +1699,16 @@ public class Emulator
         static void Main(string[] args)
         {
             Emulator emulator = new Emulator();
-            string path = args.Length > 0
-                ? args[0]
-                : Path.Combine(Directory.GetCurrentDirectory(), "7_Graphics.nes");
+            emulator.TraceEnabled = Array.Exists(args, arg => arg == "--trace");
+            string? romPath = Array.Find(args, arg => arg != "--trace");
+            string path = romPath ?? Path.Combine(Directory.GetCurrentDirectory(), "7_Graphics.nes");
 
             if (!emulator.Reset(path))
             {
+                Console.WriteLine("Usage: dotnet run -- <rom-file.nes> [--trace]");
                 return;
             }
+            Console.WriteLine($"Running {path}");
             emulator.Run();
 
             Console.WriteLine($"Emulator halted. Final PC: 0x{emulator.ProgramCounter:X4}");
