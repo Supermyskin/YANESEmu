@@ -17,7 +17,7 @@ From the repository directory, start the app and choose **File → Open ROM…**
 dotnet run
 ```
 
-The **File** menu provides ROM opening, reset, pause/resume, and quit. The window scales the 256×240 framebuffer with nearest-neighbor filtering. A ROM can also be reset with **⌘R** on macOS.
+On macOS, **About** and **File** appear in the system menu bar; **File** provides ROM opening, reset, and pause/resume. macOS supplies its standard Quit command in the application menu. On Windows and Linux, the same controls appear in the window menu. **⌘O** opens a ROM and **⌘R** resets it on macOS. The window scales the 256×240 framebuffer with nearest-neighbor filtering. ROM loading errors are shown in red in the status area. Closing the window waits for the emulation worker to stop before the app exits.
 
 The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks and zero or one 8 KiB CHR bank. CHR RAM is used when the ROM has no CHR bank. Other mappers and NES 2.0 images are rejected with a diagnostic. No ROM is included in this repository.
 
@@ -30,8 +30,8 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - PPU register window at `$2000–$3FFF`, mirrored every eight bytes.
 - NROM PRG mapped at `$8000–$FFFF`, including 16 KiB bank mirroring.
 - Reset vector loading and basic NMI entry.
-- CPU runs on a background task so the desktop window remains responsive.
-- ROM diagnostics are shown in the app status area.
+- CPU runs on a background task so the desktop window remains responsive; closing waits for that task to stop.
+- ROM diagnostics and file access errors are shown in red in the app status area.
 
 The CPU is incomplete. Encountering an unsupported opcode stops execution and reports the address. Cycle timing is approximate and is not yet validated against a full 6502 test suite. The UI shell does not make unsupported games compatible.
 

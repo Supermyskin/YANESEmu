@@ -1,6 +1,8 @@
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -24,9 +26,14 @@ internal sealed class MainWindow : Window
     private readonly DispatcherTimer frameTimer;
     private readonly byte[] bgraFrame = new byte[FrameWidth * FrameHeight * 4];
     private string? currentRomPath;
+    private NativeMenuItem? nativePauseItem;
+    private MenuItem? windowPauseItem;
     private Task? runTask;
     private volatile bool isRunning;
     private volatile bool isPaused;
+    private volatile bool hasDiagnostic;
+    private bool closePending;
+    private bool allowClose;
 
     public MainWindow()
     {
@@ -50,10 +57,15 @@ internal sealed class MainWindow : Window
         {
             Text = "Open a NES ROM to begin.",
             Margin = new Thickness(12, 8),
-            Foreground = Brushes.Gainsboro
+            Foreground = Brushes.Gainsboro,
+            TextWrapping = TextWrapping.Wrap
         };
 
-        Menu menu = BuildMenu();
+        Menu? menu = null;
+        if (OperatingSystem.IsMacOS())
+            NativeMenu.SetMenu(this, BuildNativeMenu());
+        else
+            menu = BuildWindowMenu();
         Border displayBorder = new()
         {
             Child = frameImage,
@@ -62,48 +74,80 @@ internal sealed class MainWindow : Window
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
             ClipToBounds = true
         };
-        Grid.SetRow(menu, 0);
         Grid.SetRow(displayBorder, 1);
         Grid.SetRow(statusText, 2);
         Grid layout = new();
         layout.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         layout.RowDefinitions.Add(new RowDefinition(new GridLength(1, GridUnitType.Star)));
         layout.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-        layout.Children.Add(menu);
+        if (menu is not null)
+        {
+            Grid.SetRow(menu, 0);
+            layout.Children.Add(menu);
+        }
         layout.Children.Add(displayBorder);
         layout.Children.Add(statusText);
         Content = layout;
 
-        emulator.Diagnostic += message => Dispatcher.UIThread.Post(() => SetStatus(message));
+        emulator.Diagnostic += message =>
+        {
+            hasDiagnostic = true;
+            Dispatcher.UIThread.Post(() => SetStatus(message, isError: true));
+        };
         frameTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         frameTimer.Tick += (_, _) => UpdateFrame();
         frameTimer.Start();
+        Closing += HandleClosing;
         Closed += (_, _) =>
         {
-            isRunning = false;
             frameTimer.Stop();
             bitmap.Dispose();
         };
     }
 
-    private Menu BuildMenu()
+    private Menu BuildWindowMenu()
     {
         MenuItem open = new() { Header = "Open ROM…" };
         open.Click += async (_, _) => await OpenRomAsync();
         MenuItem reset = new() { Header = "Reset", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.R, Avalonia.Input.KeyModifiers.Meta) };
         reset.Click += async (_, _) => await ResetRomAsync();
-        MenuItem pause = new() { Header = "Pause" };
-        pause.Click += (_, _) => TogglePause(pause);
+        windowPauseItem = new MenuItem { Header = "Pause" };
+        windowPauseItem.Click += (_, _) => TogglePause();
         MenuItem quit = new() { Header = "Quit" };
         quit.Click += (_, _) => Close();
         MenuItem fileMenu = new() { Header = "File" };
         fileMenu.Items.Add(open);
         fileMenu.Items.Add(reset);
-        fileMenu.Items.Add(pause);
+        fileMenu.Items.Add(windowPauseItem);
         fileMenu.Items.Add(new Separator());
         fileMenu.Items.Add(quit);
         Menu menu = new();
         menu.Items.Add(fileMenu);
+        return menu;
+    }
+
+    private NativeMenu BuildNativeMenu()
+    {
+        NativeMenu fileItems = new();
+        NativeMenuItem open = new()
+        {
+            Header = "Open ROM…",
+            Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.O, Avalonia.Input.KeyModifiers.Meta)
+        };
+        open.Click += async (_, _) => await OpenRomAsync();
+        NativeMenuItem reset = new()
+        {
+            Header = "Reset",
+            Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.R, Avalonia.Input.KeyModifiers.Meta)
+        };
+        reset.Click += async (_, _) => await ResetRomAsync();
+        nativePauseItem = new NativeMenuItem { Header = "Pause" };
+        nativePauseItem.Click += (_, _) => TogglePause();
+        fileItems.Items.Add(open);
+        fileItems.Items.Add(reset);
+        fileItems.Items.Add(nativePauseItem);
+        NativeMenu menu = new();
+        menu.Items.Add(new NativeMenuItem { Header = "File", Menu = fileItems });
         return menu;
     }
 
@@ -119,17 +163,40 @@ internal sealed class MainWindow : Window
                 FilePickerFileTypes.All
             }
         });
-        string? path = files.Count > 0 ? files[0].TryGetLocalPath() : null;
-        if (path is not null) await LoadRomAsync(path);
+        if (files.Count == 0) return;
+        string? path = files[0].TryGetLocalPath();
+        if (path is null)
+        {
+            SetStatus("Could not access the selected ROM file on this device.", isError: true);
+            return;
+        }
+        await LoadRomAsync(path);
     }
 
     private async Task LoadRomAsync(string path)
     {
         await StopEmulationAsync();
-        if (!emulator.Reset(path)) return;
+        currentRomPath = null;
+        hasDiagnostic = false;
+        try
+        {
+            if (!emulator.Reset(path))
+            {
+                Title = "YANESEmu";
+                return;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or ArgumentException or NotSupportedException)
+        {
+            Title = "YANESEmu";
+            SetStatus($"Could not open ROM: {ex.Message}", isError: true);
+            return;
+        }
         currentRomPath = path;
         Title = $"YANESEmu — {Path.GetFileName(path)}";
         isPaused = false;
+        if (nativePauseItem is not null) nativePauseItem.Header = "Pause";
+        if (windowPauseItem is not null) windowPauseItem.Header = "Pause";
         SetStatus($"Loaded {Path.GetFileName(path)}. Choose File → Pause to pause emulation.");
         StartEmulation();
     }
@@ -167,17 +234,30 @@ internal sealed class MainWindow : Window
                 await Task.Yield();
             }
 
-            if (emulator.CPU_Halted)
-                Dispatcher.UIThread.Post(() => SetStatus("Emulation stopped because the CPU halted. Check the ROM or diagnostic message."));
+            if (emulator.CPU_Halted && !hasDiagnostic)
+                Dispatcher.UIThread.Post(() => SetStatus($"CPU halted at 0x{emulator.ProgramCounter:X4}.", isError: true));
         });
     }
 
-    private void TogglePause(MenuItem item)
+    private void TogglePause()
     {
         if (currentRomPath is null) return;
         isPaused = !isPaused;
-        item.Header = isPaused ? "Resume" : "Pause";
+        string header = isPaused ? "Resume" : "Pause";
+        if (nativePauseItem is not null) nativePauseItem.Header = header;
+        if (windowPauseItem is not null) windowPauseItem.Header = header;
         SetStatus(isPaused ? "Paused." : $"Running {Path.GetFileName(currentRomPath)}.");
+    }
+
+    private async void HandleClosing(object? sender, CancelEventArgs e)
+    {
+        if (allowClose) return;
+        e.Cancel = true;
+        if (closePending) return;
+        closePending = true;
+        await StopEmulationAsync();
+        allowClose = true;
+        Close();
     }
 
     private void UpdateFrame()
@@ -200,5 +280,11 @@ internal sealed class MainWindow : Window
         frameImage.InvalidateVisual();
     }
 
-    private void SetStatus(string message) => statusText.Text = message;
+    public void ShowAbout() => SetStatus("YANESEmu — an early NES emulator written in C# and Avalonia.");
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        statusText.Text = message;
+        statusText.Foreground = isError ? Brushes.OrangeRed : Brushes.Gainsboro;
+    }
 }
