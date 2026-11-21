@@ -55,7 +55,13 @@ The core matches the nestest CPU reference log. Timing advances per instruction,
 - 8×8 and 8×16 OAM sprites with transparency, flips, palettes, background priority, sprite-zero hit, and the eight-sprites-per-scanline limit.
 - 256×240 framebuffer displayed in the Avalonia desktop window.
 
-APU audio, controller input, mapper support beyond NROM, and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
+### Controller input
+
+- Player-one keyboard input is connected to the NES serial controller port at `$4016`.
+- Default bindings are Z/X for A/B, Right Shift for Select, Enter for Start, and the arrow keys for directions.
+- Choose **Controls → Configure Controller…** to change bindings. Settings are saved in the user's application-data folder and restored at startup.
+
+APU audio, mapper support beyond NROM, and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
 
 ## Project layout
 

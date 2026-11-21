@@ -101,6 +101,7 @@ public partial class Emulator
         flag_Negative = false;
 
         Array.Clear(RAM, 0, RAM.Length);
+        ResetControllers();
 
         byte pcLow = Read(0xFFFC);
         byte pcHigh = Read(0xFFFD);

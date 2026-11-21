@@ -21,6 +21,8 @@ public partial class Emulator
 
     public byte Read(ushort addr)
     {
+        if (addr is 0x4016 or 0x4017)
+            return ReadController(addr - 0x4016);
         if (addr < 0x2000)
         {
             return RAM[addr % 0x800];
@@ -46,7 +48,11 @@ public partial class Emulator
 
     public void Write(ushort addr, byte value)
     {
-        if (addr < 0x2000)
+        if (addr == 0x4016)
+        {
+            WriteControllerStrobe(value);
+        }
+        else if (addr < 0x2000)
         {
             RAM[addr % 0x800] = value;
         }

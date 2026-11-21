@@ -3,12 +3,14 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Input;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -38,15 +40,30 @@ internal sealed class MainWindow : Window
     private bool closePending;
     private bool allowClose;
     private bool shutdownRequested;
+    private readonly Dictionary<ControllerButton, Key> controllerBindings = new()
+    {
+        [ControllerButton.A] = Key.Z,
+        [ControllerButton.B] = Key.X,
+        [ControllerButton.Select] = Key.RightShift,
+        [ControllerButton.Start] = Key.Enter,
+        [ControllerButton.Up] = Key.Up,
+        [ControllerButton.Down] = Key.Down,
+        [ControllerButton.Left] = Key.Left,
+        [ControllerButton.Right] = Key.Right
+    };
 
     public MainWindow()
     {
         Title = "YANESEmu";
+        LoadControllerBindings();
         Width = 900;
         Height = 700;
         MinWidth = 520;
         MinHeight = 420;
         Background = new SolidColorBrush(Color.Parse("#171717"));
+        Focusable = true;
+        KeyDown += HandleControllerKeyDown;
+        KeyUp += HandleControllerKeyUp;
 
         frameImage = new Image
         {
@@ -135,6 +152,11 @@ internal sealed class MainWindow : Window
         fileMenu.Items.Add(quit);
         Menu menu = new();
         menu.Items.Add(fileMenu);
+        MenuItem controls = new() { Header = "Controls" };
+        MenuItem configure = new() { Header = "Configure Controller…" };
+        configure.Click += async (_, _) => await ConfigureControllerAsync();
+        controls.Items.Add(configure);
+        menu.Items.Add(controls);
         return menu;
     }
 
@@ -166,8 +188,81 @@ internal sealed class MainWindow : Window
         fileItems.Items.Add(stop);
         NativeMenu menu = new();
         menu.Items.Add(new NativeMenuItem { Header = "File", Menu = fileItems });
+        NativeMenu controlsItems = new();
+        NativeMenuItem configure = new() { Header = "Configure Controller…" };
+        configure.Click += async (_, _) => await ConfigureControllerAsync();
+        controlsItems.Items.Add(configure);
+        menu.Items.Add(new NativeMenuItem { Header = "Controls", Menu = controlsItems });
         return menu;
     }
+
+    private void HandleControllerKeyDown(object? sender, KeyEventArgs e)
+    {
+        foreach ((ControllerButton button, Key key) in controllerBindings)
+        {
+            if (key != e.Key) continue;
+            emulator.SetControllerButton(0, button, true);
+            e.Handled = true;
+        }
+    }
+
+    private void HandleControllerKeyUp(object? sender, KeyEventArgs e)
+    {
+        foreach ((ControllerButton button, Key key) in controllerBindings)
+        {
+            if (key != e.Key) continue;
+            emulator.SetControllerButton(0, button, false);
+            e.Handled = true;
+        }
+    }
+
+    private async Task ConfigureControllerAsync()
+    {
+        ControllerSettingsWindow dialog = new(new(controllerBindings));
+        if (!await dialog.ShowForOwner(this)) return;
+        if (dialog.Bindings.Values.Distinct().Count() != dialog.Bindings.Count)
+        {
+            SetStatus("Each controller button needs a different key.", isError: true);
+            return;
+        }
+
+        controllerBindings.Clear();
+        foreach ((ControllerButton button, Key key) in dialog.Bindings)
+            controllerBindings[button] = key;
+        try
+        {
+            string path = ControllerSettingsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(controllerBindings));
+            SetStatus("Controller bindings saved.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            SetStatus($"Could not save controller bindings: {ex.Message}", isError: true);
+        }
+    }
+
+    private void LoadControllerBindings()
+    {
+        try
+        {
+            string path = ControllerSettingsPath();
+            if (!File.Exists(path)) return;
+            Dictionary<ControllerButton, Key>? saved = JsonSerializer.Deserialize<Dictionary<ControllerButton, Key>>(File.ReadAllText(path));
+            if (saved is null || Enum.GetValues<ControllerButton>().Any(button => !saved.ContainsKey(button))
+                || saved.Values.Distinct().Count() != saved.Count) return;
+            controllerBindings.Clear();
+            foreach ((ControllerButton button, Key key) in saved)
+                controllerBindings[button] = key;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or JsonException)
+        {
+            // Use the built-in defaults when settings are missing or invalid.
+        }
+    }
+
+    private static string ControllerSettingsPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YANESEmu", "controller.json");
 
     private async Task OpenRomAsync()
     {
