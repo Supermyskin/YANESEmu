@@ -7,7 +7,7 @@ YANESEmu is an early NES emulator written in C# with a cross-platform desktop wi
 - .NET 10 SDK
 - An iNES NROM ROM image (`.nes`)
 
-The desktop app targets macOS, Windows, and Linux. Avalonia provides the application window and pixel-scaled display. The emulator remains early-stage; CPU and PPU accuracy, audio, input, and cartridge support are incomplete.
+The desktop app targets macOS, Windows, and Linux. Avalonia provides the application window and pixel-scaled display; SoundFlow/MiniAudio provides cross-platform audio output. The emulator remains early-stage; CPU and PPU accuracy, audio, and cartridge support are incomplete.
 
 ## Run
 
@@ -17,7 +17,7 @@ From the repository directory, start the app and choose **File → Open ROM…**
 dotnet run
 ```
 
-On macOS, **About** and **File** appear in the system menu bar; **File** provides ROM opening, reset, and pause/resume. macOS supplies its standard Quit command in the application menu. On Windows and Linux, the same controls appear in the window menu. **⌘O** opens a ROM and **⌘R** resets it on macOS. The window scales the 256×240 framebuffer with nearest-neighbor filtering. ROM loading errors are shown in red in the status area. Closing the window waits for the emulation worker to stop before the app exits.
+On macOS, **About**, **File**, **Controls**, and **Audio** appear in the system menu bar; **File** provides ROM opening, reset, and pause/resume. macOS supplies its standard Quit command in the application menu. On Windows and Linux, the same controls appear in the window menu. **⌘O** opens a ROM and **⌘R** resets it on macOS. The window scales the 256×240 framebuffer with nearest-neighbor filtering. ROM loading errors are shown in red in the status area. Closing the window waits for the emulation worker to stop before the app exits.
 
 The File menu also includes **Step Instruction** (pause first) and **Stop**. Reset waits for the current CPU worker to stop before reinitializing the machine. A deliberate Stop preserves the current machine state; use Reset to restart the ROM.
 
@@ -43,7 +43,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - The core run loop accepts a cancellation token so callers can stop continuous execution.
 - ROM diagnostics and file access errors are shown in red in the app status area.
 
-The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, SAX, SBC, ANC, ALR, ARR, AXS, SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, APU, input, and mapper support remain incomplete.
+The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, SAX, SBC, ANC, ALR, ARR, AXS, SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, full APU, and mapper support remain incomplete.
 
 ### PPU
 
@@ -61,6 +61,13 @@ The core matches the nestest CPU reference log. Timing advances per instruction,
 - Default bindings are Z/X for A/B, Right Shift for Select, Enter for Start, and the arrow keys for directions.
 - Choose **Controls → Configure Controller…** to change bindings. Settings are saved in the user's application-data folder and restored at startup.
 
+### Audio
+
+- Pulse, triangle, and noise channels generate samples from CPU cycle timing.
+- SoundFlow/MiniAudio outputs sound through the system's default audio device.
+- Choose **Audio → Audio Settings…** to set master volume or mute. Preferences are saved in the user's application-data folder.
+- The DMC sample channel and some cycle-accurate APU details are not implemented.
+
 Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
 
 ## Project layout
@@ -69,6 +76,7 @@ Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are no
 - `Cpu.cs`: CPU instruction execution and cycle accounting.
 - `Ppu.cs`: PPU registers, memory, timing, and background rendering.
 - `Cartridge.cs`: iNES NROM loading and reset initialization.
+- `Apu.cs`, `AudioSampleBuffer.cs`, `AudioOutput.cs`: NES audio synthesis, sample buffering, and desktop playback.
 - `Program.cs`, `YanesEmuApp.cs`, `MainWindow.cs`: Avalonia startup, desktop window, ROM controls, and framebuffer display.
 - `TraceLogger.cs`: optional instruction trace formatting, enabled with `--trace`.
 - `FramePresenter.cs`: legacy terminal display and BMP output utilities (not used by the desktop app).

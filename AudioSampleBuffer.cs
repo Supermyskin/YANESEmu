@@ -30,6 +30,15 @@ public sealed class AudioSampleBuffer
         return count;
     }
 
+    public float ReadSample()
+    {
+        int read = readIndex;
+        if (read == Volatile.Read(ref writeIndex)) return 0;
+        float sample = samples[read];
+        Volatile.Write(ref readIndex, (read + 1) % samples.Length);
+        return sample;
+    }
+
     public void Clear()
     {
         Volatile.Write(ref readIndex, Volatile.Read(ref writeIndex));

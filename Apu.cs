@@ -23,6 +23,8 @@ internal sealed class NesApu
     private readonly byte[] lengthCounters = new byte[4];
     private readonly byte[] envelopeDecay = new byte[3];
     private readonly bool[] envelopeStart = new bool[3];
+    private readonly byte[] sweepDivider = new byte[2];
+    private readonly bool[] sweepReload = new bool[2];
     private readonly AudioSampleBuffer output = new();
     private int frameCounter;
     private int sampleCounter;
@@ -55,6 +57,8 @@ internal sealed class NesApu
         Array.Clear(lengthCounters, 0, lengthCounters.Length);
         Array.Clear(envelopeDecay, 0, envelopeDecay.Length);
         Array.Clear(envelopeStart, 0, envelopeStart.Length);
+        Array.Clear(sweepDivider, 0, sweepDivider.Length);
+        Array.Clear(sweepReload, 0, sweepReload.Length);
         frameCounter = sampleCounter = pulseTimer1 = pulseTimer2 = triangleTimer = noiseTimer = 0;
         pulseSequence1 = pulseSequence2 = triangleSequence = 0;
         noiseShift = 1;
@@ -73,6 +77,7 @@ internal sealed class NesApu
             int channel = (address - 0x4000) / 4;
             int register = (address - 0x4000) & 3;
             pulseRegisters[channel, register] = value;
+            if (register == 1) sweepReload[channel] = true;
             if (register == 3)
             {
                 if ((channel == 0 ? pulse1Enabled : pulse2Enabled))
@@ -224,6 +229,8 @@ internal sealed class NesApu
 
     private void HalfFrame()
     {
+        ClockSweep(0);
+        ClockSweep(1);
         for (int channel = 0; channel < 4; channel++)
         {
             bool halt = channel switch
@@ -234,6 +241,35 @@ internal sealed class NesApu
                 _ => (noiseRegisters[0] & 0x20) != 0
             };
             if (!halt && lengthCounters[channel] > 0) lengthCounters[channel]--;
+        }
+    }
+
+    private void ClockSweep(int channel)
+    {
+        byte sweep = pulseRegisters[channel, 1];
+        int dividerPeriod = (sweep >> 4) & 7;
+        int timerPeriod = PulseTimer(channel);
+        int shift = sweep & 7;
+        int change = timerPeriod >> shift;
+        int target = (sweep & 0x08) != 0
+            ? timerPeriod - change - (channel == 0 ? 1 : 0)
+            : timerPeriod + change;
+
+        if (sweepDivider[channel] == 0 && (sweep & 0x80) != 0 && shift != 0
+            && timerPeriod >= 8 && target is >= 0 and <= 0x7FF)
+        {
+            pulseRegisters[channel, 2] = (byte)target;
+            pulseRegisters[channel, 3] = (byte)((pulseRegisters[channel, 3] & 0xF8) | (target >> 8));
+        }
+
+        if (sweepDivider[channel] == 0 || sweepReload[channel])
+        {
+            sweepDivider[channel] = (byte)dividerPeriod;
+            sweepReload[channel] = false;
+        }
+        else
+        {
+            sweepDivider[channel]--;
         }
     }
 

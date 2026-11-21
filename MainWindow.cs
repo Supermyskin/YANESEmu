@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security;
@@ -40,6 +41,9 @@ internal sealed class MainWindow : Window
     private bool closePending;
     private bool allowClose;
     private bool shutdownRequested;
+    private AudioOutput? audioOutput;
+    private float audioVolume = 0.75f;
+    private bool audioMuted;
     private readonly Dictionary<ControllerButton, Key> controllerBindings = new()
     {
         [ControllerButton.A] = Key.Z,
@@ -56,6 +60,7 @@ internal sealed class MainWindow : Window
     {
         Title = "YANESEmu";
         LoadControllerBindings();
+        LoadAudioSettings();
         Width = 900;
         Height = 700;
         MinWidth = 520;
@@ -81,6 +86,16 @@ internal sealed class MainWindow : Window
             Foreground = Brushes.Gainsboro,
             TextWrapping = TextWrapping.Wrap
         };
+
+        try
+        {
+            audioOutput = new AudioOutput(emulator.AudioSamples, audioVolume, audioMuted);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Audio output unavailable: {ex.Message}", isError: true);
+        }
+        Deactivated += (_, _) => ReleaseControllerButtons();
 
         Menu? menu = null;
         if (OperatingSystem.IsMacOS())
@@ -124,6 +139,7 @@ internal sealed class MainWindow : Window
         Closed += (_, _) =>
         {
             frameTimer.Stop();
+            audioOutput?.Dispose();
             bitmap.Dispose();
         };
     }
@@ -157,6 +173,11 @@ internal sealed class MainWindow : Window
         configure.Click += async (_, _) => await ConfigureControllerAsync();
         controls.Items.Add(configure);
         menu.Items.Add(controls);
+        MenuItem audio = new() { Header = "Audio" };
+        MenuItem configureAudio = new() { Header = "Audio Settings…" };
+        configureAudio.Click += async (_, _) => await ConfigureAudioAsync();
+        audio.Items.Add(configureAudio);
+        menu.Items.Add(audio);
         return menu;
     }
 
@@ -193,6 +214,11 @@ internal sealed class MainWindow : Window
         configure.Click += async (_, _) => await ConfigureControllerAsync();
         controlsItems.Items.Add(configure);
         menu.Items.Add(new NativeMenuItem { Header = "Controls", Menu = controlsItems });
+        NativeMenu audioItems = new();
+        NativeMenuItem configureAudio = new() { Header = "Audio Settings…" };
+        configureAudio.Click += async (_, _) => await ConfigureAudioAsync();
+        audioItems.Items.Add(configureAudio);
+        menu.Items.Add(new NativeMenuItem { Header = "Audio", Menu = audioItems });
         return menu;
     }
 
@@ -216,6 +242,12 @@ internal sealed class MainWindow : Window
         }
     }
 
+    private void ReleaseControllerButtons()
+    {
+        foreach (ControllerButton button in Enum.GetValues<ControllerButton>())
+            emulator.SetControllerButton(0, button, false);
+    }
+
     private async Task ConfigureControllerAsync()
     {
         ControllerSettingsWindow dialog = new(new(controllerBindings));
@@ -227,6 +259,7 @@ internal sealed class MainWindow : Window
         }
 
         controllerBindings.Clear();
+        ReleaseControllerButtons();
         foreach ((ControllerButton button, Key key) in dialog.Bindings)
             controllerBindings[button] = key;
         try
@@ -263,6 +296,52 @@ internal sealed class MainWindow : Window
 
     private static string ControllerSettingsPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YANESEmu", "controller.json");
+
+    private async Task ConfigureAudioAsync()
+    {
+        AudioSettingsWindow dialog = new(audioVolume, audioMuted);
+        if (!await dialog.ShowForOwner(this)) return;
+        audioVolume = dialog.Volume;
+        audioMuted = dialog.Muted;
+        if (audioOutput is not null)
+        {
+            audioOutput.Volume = audioVolume;
+            audioOutput.Muted = audioMuted;
+        }
+        try
+        {
+            string path = AudioSettingsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(new AudioPreferences(audioVolume, audioMuted)));
+            SetStatus(audioMuted ? "Audio muted." : $"Audio volume set to {Math.Round(audioVolume * 100)}%.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            SetStatus($"Could not save audio settings: {ex.Message}", isError: true);
+        }
+    }
+
+    private void LoadAudioSettings()
+    {
+        try
+        {
+            string path = AudioSettingsPath();
+            if (!File.Exists(path)) return;
+            AudioPreferences? saved = JsonSerializer.Deserialize<AudioPreferences>(File.ReadAllText(path));
+            if (saved is null) return;
+            audioVolume = Math.Clamp(saved.Volume, 0, 1);
+            audioMuted = saved.Muted;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or JsonException)
+        {
+            // Keep the default volume and mute state when preferences cannot be read.
+        }
+    }
+
+    private static string AudioSettingsPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "YANESEmu", "audio.json");
+
+    private sealed record AudioPreferences(float Volume, bool Muted);
 
     private async Task OpenRomAsync()
     {
@@ -354,6 +433,8 @@ internal sealed class MainWindow : Window
 
     private async Task RunEmulationAsync()
     {
+        Stopwatch pacingClock = Stopwatch.StartNew();
+        long pacingStartCycles = emulator.TotalCycles;
         try
         {
             while (isRunning && !emulator.CPU_Halted)
@@ -362,12 +443,19 @@ internal sealed class MainWindow : Window
                 {
                     pauseAcknowledged.TrySetResult();
                     await resumeSignal.Task;
+                    pacingStartCycles = emulator.TotalCycles;
+                    pacingClock.Restart();
                     continue;
                 }
 
                 for (int i = 0; i < 2500 && isRunning && !isPaused && !emulator.CPU_Halted; i++)
                     emulator.Step();
-                await Task.Yield();
+                double expectedSeconds = (emulator.TotalCycles - pacingStartCycles) / 1_789_773.0;
+                double remainingSeconds = expectedSeconds - pacingClock.Elapsed.TotalSeconds;
+                if (remainingSeconds > 0.002)
+                    await Task.Delay(TimeSpan.FromSeconds(remainingSeconds - 0.001));
+                else
+                    await Task.Yield();
             }
         }
         catch (Exception ex)
