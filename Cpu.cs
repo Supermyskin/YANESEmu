@@ -248,23 +248,28 @@ public partial class Emulator
         return cycles;
     }
 
+    private int ServiceInterrupt(ushort vector, bool isNmi)
+    {
+        Push((byte)(ProgramCounter >> 8));
+        Push((byte)ProgramCounter);
+        byte status = (byte)((flag_Carry ? 1 : 0) | (flag_Zero ? 2 : 0) |
+            (flag_InterruptDisable ? 4 : 0) | (flag_Decimal ? 8 : 0) | 0x20 |
+            (flag_Overflow ? 0x40 : 0) | (flag_Negative ? 0x80 : 0));
+        Push(status); // B is clear for hardware interrupts.
+        flag_InterruptDisable = true;
+        ProgramCounter = ReadWord(vector);
+        if (isNmi) NMIRequested = false;
+        return FinishStep(7);
+    }
+
     public int Step()
     {
         if (CPU_Halted) return FinishStep(0);
 
         if (NMIRequested)
-        {
-            Push((byte)(ProgramCounter >> 8));
-            Push((byte)ProgramCounter);
-            byte status = (byte)((flag_Carry ? 1 : 0) | (flag_Zero ? 2 : 0) |
-                (flag_InterruptDisable ? 4 : 0) | (flag_Decimal ? 8 : 0) | 0x20 |
-                (flag_Overflow ? 0x40 : 0) | (flag_Negative ? 0x80 : 0));
-            Push(status);
-            flag_InterruptDisable = true;
-            ProgramCounter = ReadWord(0xFFFA);
-            NMIRequested = false;
-            return FinishStep(7);
-        }
+            return ServiceInterrupt(0xFFFA, isNmi: true);
+        if (IRQRequested && !flag_InterruptDisable)
+            return ServiceInterrupt(0xFFFE, isNmi: false);
 
         ushort pcBeforeStep = ProgramCounter;
         opcode = Read(ProgramCounter++);

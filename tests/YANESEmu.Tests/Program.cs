@@ -10,6 +10,9 @@ Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
 Run("PPU raises NMI at vblank", PpuRaisesNmiAtVblank);
+Run("NMI enters through its vector and pushes hardware status", PpuNmiIsServiced);
+Run("IRQ obeys the interrupt mask and preserves the asserted line", IrqIsMaskedAndServiced);
+Run("BRK pushes the software-interrupt status", BrkPushesBreakStatus);
 Run("NROM cartridge loads reset vector and CHR RAM", NromLoads);
 Run("emulator publishes frames without console output", EmulatorPublishesFrames);
 Run("unsupported opcodes publish diagnostics", UnsupportedOpcodesPublishDiagnostics);
@@ -125,6 +128,65 @@ static void PpuRaisesNmiAtVblank()
     emulator.Write(0x2000, 0x80);
     for (int i = 0; i < 16000 && !emulator.NMIRequested; i++) emulator.Step();
     True(emulator.NMIRequested, "vblank NMI request");
+}
+
+static void PpuNmiIsServiced()
+{
+    Emulator emulator = NewEmulator(0xEA);
+    emulator.ROM[0x7FFA] = 0x34;
+    emulator.ROM[0x7FFB] = 0x12;
+    emulator.stackPointer = 0xFD;
+    emulator.Write(0x2000, 0x80);
+    for (int i = 0; i < 16000 && !emulator.NMIRequested; i++) emulator.Step();
+    True(emulator.NMIRequested, "NMI pending at vblank");
+    ushort returnPc = emulator.ProgramCounter;
+    Equal(7, emulator.Step(), "NMI service cycles");
+    Equal((ushort)0x1234, emulator.ProgramCounter, "NMI vector");
+    Equal((byte)(returnPc >> 8), emulator.Read(0x01FD), "NMI stacked PC high");
+    Equal((byte)returnPc, emulator.Read(0x01FC), "NMI stacked PC low");
+    True((emulator.Read(0x01FB) & 0x30) == 0x20, "NMI stack status has U set and B clear");
+    True(!emulator.NMIRequested, "NMI request cleared after service");
+}
+
+static void IrqIsMaskedAndServiced()
+{
+    Emulator emulator = NewEmulator(0xEA);
+    emulator.ROM[0x7FFE] = 0x34;
+    emulator.ROM[0x7FFF] = 0x12;
+    emulator.stackPointer = 0xFD;
+    emulator.SetIRQLine(true);
+    emulator.flag_InterruptDisable = true;
+    Equal(2, emulator.Step(), "masked IRQ executes next instruction");
+    Equal((ushort)0x8001, emulator.ProgramCounter, "masked IRQ preserves PC flow");
+    Equal((byte)0xFD, emulator.stackPointer, "masked IRQ does not push state");
+
+    emulator.flag_InterruptDisable = false;
+    emulator.flag_Carry = true;
+    Equal(7, emulator.Step(), "IRQ service cycles");
+    Equal((ushort)0x1234, emulator.ProgramCounter, "IRQ vector");
+    Equal((byte)0x80, emulator.Read(0x01FD), "IRQ stacked PC high");
+    Equal((byte)0x01, emulator.Read(0x01FC), "IRQ stacked PC low");
+    Equal((byte)0x21, emulator.Read(0x01FB), "IRQ stack status has U set and B clear");
+    True(emulator.flag_InterruptDisable, "IRQ sets interrupt mask");
+    True(emulator.IRQRequested, "IRQ line remains asserted until the device releases it");
+}
+
+static void BrkPushesBreakStatus()
+{
+    Emulator emulator = NewEmulator(0x00, 0xEA);
+    emulator.ROM[0x7FFE] = 0x00;
+    emulator.ROM[0x7FFF] = 0x90;
+    emulator.stackPointer = 0xFD;
+    emulator.flag_InterruptDisable = false;
+    emulator.flag_Carry = true;
+    emulator.flag_Decimal = true;
+    emulator.flag_Negative = true;
+    Equal(7, emulator.Step(), "BRK cycles");
+    Equal((ushort)0x9000, emulator.ProgramCounter, "BRK vector");
+    Equal((byte)0x80, emulator.Read(0x01FD), "BRK stacked PC high");
+    Equal((byte)0x02, emulator.Read(0x01FC), "BRK stacked PC after signature byte");
+    Equal((byte)0xB9, emulator.Read(0x01FB), "BRK stack status includes B and U");
+    True(emulator.flag_InterruptDisable, "BRK sets interrupt mask");
 }
 
 static void NromLoads()

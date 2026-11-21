@@ -54,6 +54,7 @@ public partial class Emulator
         ppuScanline = 261;
         ppuDot = 0;
         NMIRequested = false;
+        IRQRequested = false;
         writeLatch = false;
         vramAddr = 0;
         tramAddr = 0;

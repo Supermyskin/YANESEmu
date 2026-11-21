@@ -37,7 +37,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - CPU RAM at `$0000–$07FF`, mirrored through `$1FFF`.
 - PPU register window at `$2000–$3FFF`, mirrored every eight bytes.
 - NROM PRG mapped at `$8000–$FFFF`, including 16 KiB bank mirroring.
-- Reset vector loading and basic NMI entry.
+- Reset vector loading, NMI and maskable IRQ entry, and BRK handling.
 - CPU runs on a background task so the desktop window remains responsive; closing waits for that task to stop.
 - Pause waits for the current instruction batch to reach a safe boundary; single-step runs one instruction while paused or stopped.
 - The core run loop accepts a cancellation token so callers can stop continuous execution.
@@ -76,7 +76,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations, official-opcode dispatch, indexed page-cross timing, cancellable run-loop behavior, RAM mirroring, PPU buffered reads and palette mirrors, vblank NMI, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations, official-opcode dispatch, indexed page-cross timing, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 

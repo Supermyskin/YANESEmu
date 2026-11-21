@@ -11,10 +11,13 @@ public partial class Emulator
     public long TotalCycles = 7;
     private bool pageCrossed;
     public bool CPU_Halted;
+    public bool IRQRequested { get; private set; }
     public bool flag_Carry, flag_Zero, flag_InterruptDisable, flag_Decimal, flag_Overflow, flag_Negative;
     public event Action<Emulator, ushort, byte>? InstructionExecuted;
     public event Action? FrameReady;
     public event Action<string>? Diagnostic;
+
+    public void SetIRQLine(bool asserted) => IRQRequested = asserted;
 
     public byte Read(ushort addr)
     {
