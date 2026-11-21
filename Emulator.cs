@@ -12,6 +12,9 @@ public partial class Emulator
     private bool pageCrossed;
     private readonly NesApu apu = new();
     private int pendingDmaCycles;
+    private bool cpuStepActive;
+    private bool dmaTransferActive;
+    private int cpuBusCycles;
     public bool CPU_Halted;
     public bool IRQRequested { get; private set; }
     public bool flag_Carry, flag_Zero, flag_InterruptDisable, flag_Decimal, flag_Overflow, flag_Negative;
@@ -24,6 +27,7 @@ public partial class Emulator
 
     public byte Read(ushort addr)
     {
+        TickCpuBus();
         if (addr is 0x4016 or 0x4017)
             return ReadController(addr - 0x4016);
         if (addr == 0x4015)
@@ -53,11 +57,14 @@ public partial class Emulator
 
     public void Write(ushort addr, byte value)
     {
+        TickCpuBus();
         if (addr == 0x4014)
         {
             int start = value << 8;
+            dmaTransferActive = true;
             for (int i = 0; i < 256; i++)
                 WriteOamDmaByte(Read((ushort)(start + i)));
+            dmaTransferActive = false;
             pendingDmaCycles += (int)(513 + (TotalCycles & 1));
         }
         else if (addr == 0x4016)
@@ -76,6 +83,13 @@ public partial class Emulator
         {
             WritePpuRegister((ushort)(0x2000 | (addr & 7)), value);
         }
+    }
+
+    private void TickCpuBus()
+    {
+        if (!cpuStepActive || dmaTransferActive) return;
+        cpuBusCycles++;
+        ClockPpu(3);
     }
 
     public void Run(CancellationToken cancellationToken = default)

@@ -69,7 +69,7 @@ The core matches the nestest CPU reference log. Timing advances per instruction,
 - Choose **Audio → Audio Settings…** to set master volume or mute. Preferences are saved in the user's application-data folder.
 - The DMC sample channel and some cycle-accurate APU details are not implemented.
 
-Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are not implemented. CPU execution advances PPU time after each instruction, so CPU register accesses are not synchronized to individual PPU dots. Sprite overflow uses a simplified scanline evaluation and does not reproduce the hardware evaluation bug. Games relying on exact fetch timing or that overflow quirk may still render incorrectly.
+Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are not implemented. CPU memory accesses advance the PPU at each bus cycle, with three PPU dots per CPU cycle; instruction-internal cycles without an explicit bus access are still placed at the end of the instruction, so some dummy-access edge cases remain approximate. Sprite overflow includes the hardware diagonal OAM-byte scan, but secondary OAM clear/copy and overflow are evaluated at scanline granularity rather than their exact PPU dots. Games relying on exact fetch or evaluation timing may still render incorrectly.
 
 ## Project layout
 
@@ -92,7 +92,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common undocumented-opcode behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, 8×8/8×16 sprite rendering, sprite-zero hit and overflow, NROM and CHR RAM loading, and the core's frame and diagnostic events. To compare the complete CPU trace against nestest, download `nestest.nes` and `nestest.log` from the [NES test ROM collection](https://github.com/christopherpow/nes-test-roms/tree/master/other), set `YANESEMU_NESTEST_ROM` and `YANESEMU_NESTEST_LOG` to their paths, and run the test project. The ROM is not included. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common undocumented-opcode behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, 8×8/8×16 sprite rendering, sprite-zero hit, normal overflow and diagonal overflow behavior, NROM and CHR RAM loading, and the core's frame and diagnostic events. To compare the complete CPU trace against nestest, download `nestest.nes` and `nestest.log` from the [NES test ROM collection](https://github.com/christopherpow/nes-test-roms/tree/master/other), set `YANESEMU_NESTEST_ROM` and `YANESEMU_NESTEST_LOG` to their paths, and run the test project. The ROM is not included. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 

@@ -333,12 +333,18 @@ public partial class Emulator
 
     private int FinishStep(int cycles)
     {
-        cycles += pendingDmaCycles;
+        int elapsedCpuCycles = Math.Max(cycles, cpuBusCycles);
+        if (cpuStepActive && elapsedCpuCycles > cpuBusCycles)
+            ClockPpu((elapsedCpuCycles - cpuBusCycles) * 3);
+        cpuStepActive = false;
+        cpuBusCycles = 0;
+        int dmaCycles = pendingDmaCycles;
         pendingDmaCycles = 0;
-        TotalCycles += cycles;
-        apu.Clock(cycles);
-        ClockPpu(cycles * 3);
-        return cycles;
+        if (dmaCycles > 0) ClockPpu(dmaCycles * 3);
+        int totalCycles = elapsedCpuCycles + dmaCycles;
+        TotalCycles += totalCycles;
+        apu.Clock(totalCycles);
+        return totalCycles;
     }
 
     private int ServiceInterrupt(ushort vector, bool isNmi)
@@ -358,6 +364,9 @@ public partial class Emulator
     public int Step()
     {
         if (CPU_Halted) return FinishStep(0);
+
+        cpuStepActive = true;
+        cpuBusCycles = 0;
 
         if (NMIRequested)
             return ServiceInterrupt(0xFFFA, isNmi: true);

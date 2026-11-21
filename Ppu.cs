@@ -304,20 +304,41 @@ public partial class Emulator
     {
         scanlineSpriteCount = 0;
         int spriteHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
+        int spriteIndex = 0;
         for (int sprite = 0; sprite < 64; sprite++)
         {
-            int top = oam[sprite * 4] == 0xFF ? 0 : oam[sprite * 4] + 1;
-            int row = y - top;
+            int row = SpriteRowForScanline(oam[sprite * 4], y);
             if ((uint)row >= spriteHeight) continue;
             if (scanlineSpriteCount < scanlineSprites.Length)
-                scanlineSprites[scanlineSpriteCount++] = sprite;
-            else
             {
-                ppuStatus |= 0x20;
-                break;
+                scanlineSprites[scanlineSpriteCount++] = sprite;
+                spriteIndex = sprite + 1;
+                if (scanlineSpriteCount == scanlineSprites.Length) break;
             }
         }
+
+        if (scanlineSpriteCount < 8) return;
+
+        // After secondary OAM fills, the PPU's broken n/m counters walk diagonally
+        // through OAM bytes. Non-Y bytes can therefore be mistaken for Y positions.
+        int byteIndex = 0;
+        while (spriteIndex < 64)
+        {
+            byte value = oam[spriteIndex * 4 + byteIndex];
+            int row = SpriteRowForScanline(value, y);
+            if ((uint)row < spriteHeight)
+            {
+                ppuStatus |= 0x20;
+                return;
+            }
+
+            spriteIndex++;
+            byteIndex = (byte)((byteIndex + 1) & 3);
+        }
     }
+
+    private static int SpriteRowForScanline(byte spriteY, int scanline) =>
+        scanline - (spriteY == 0xFF ? 0 : spriteY + 1);
 
     private static uint GetNesColor(byte index)
     {

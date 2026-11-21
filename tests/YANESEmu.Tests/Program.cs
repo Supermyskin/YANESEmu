@@ -22,6 +22,7 @@ Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
 Run("PPU renders 8x8 sprites from OAM and CHR", PpuRendersSprites);
 Run("PPU renders 8x16 sprites and reports scanline overflow", PpuRendersTallSpritesAndOverflow);
+Run("PPU reproduces the diagonal sprite overflow scan", PpuReproducesOverflowBug);
 Run("PPU detects opaque sprite zero overlap", PpuDetectsSpriteZeroHit);
 Run("PPU raises NMI at vblank", PpuRaisesNmiAtVblank);
 Run("NMI enters through its vector and pushes hardware status", PpuNmiIsServiced);
@@ -548,6 +549,23 @@ static void PpuDetectsSpriteZeroHit()
     emulator.EmulatePPU();
 
     True((emulator.Read(0x2002) & 0x40) != 0, "sprite zero hit status");
+}
+
+static void PpuReproducesOverflowBug()
+{
+    Emulator emulator = new();
+    emulator.Write(0x2003, 0);
+    for (int sprite = 0; sprite < 64; sprite++)
+    {
+        byte y = sprite < 8 ? (byte)0xFF : (byte)30;
+        emulator.Write(0x2004, y);
+        emulator.Write(0x2004, sprite == 9 ? (byte)0xFF : (byte)0);
+        emulator.Write(0x2004, 0);
+        emulator.Write(0x2004, 0);
+    }
+    emulator.Write(0x2001, 0x10);
+    emulator.EmulatePPU();
+    True((emulator.Read(0x2002) & 0x20) != 0, "non-Y OAM byte triggers diagonal overflow scan");
 }
 
 static void PpuRaisesNmiAtVblank()
