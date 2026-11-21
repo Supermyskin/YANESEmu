@@ -33,7 +33,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 
 ### CPU and bus
 
-- 6502 execution for a limited set of official instructions, including common loads, stores, arithmetic, logic, shifts, branches, stack operations, and register transfers.
+- Execution paths for all 151 official NMOS 6502 opcodes, with conformance and timing validation in progress.
 - CPU RAM at `$0000–$07FF`, mirrored through `$1FFF`.
 - PPU register window at `$2000–$3FFF`, mirrored every eight bytes.
 - NROM PRG mapped at `$8000–$FFFF`, including 16 KiB bank mirroring.
