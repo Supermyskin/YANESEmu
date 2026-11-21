@@ -4,7 +4,7 @@ using System.Threading;
 
 Run("CPU executes immediate load and transfer", CpuExecutesLoadAndTransfer);
 Run("CPU run loop honors cancellation after the current instruction", CpuRunStopsOnCancellation);
-Run("CPU recognizes every official NMOS 6502 opcode", CpuRecognizesOfficialOpcodes);
+Run("CPU recognizes all official NMOS opcodes with their base cycles", CpuRecognizesOfficialOpcodes);
 Run("ADC indirect-indexed timing adds a page-cross cycle", AdcIndirectYPageCrossTiming);
 Run("indexed reads account for page crossings", IndexedReadPageCrossTiming);
 Run("conditional branches account for taken and page-cross cycles", BranchCycleTiming);
@@ -71,14 +71,50 @@ static void CpuRecognizesOfficialOpcodes()
     };
 
     Equal(151, officialOpcodes.Length, "official NMOS opcode count");
+    byte[] baseCycles =
+    {
+        7,6,0,0,0,3,5,0,3,2,2,0,0,4,6,0,
+        2,5,0,0,0,4,6,0,2,4,2,0,0,4,7,0,
+        6,6,0,0,3,3,5,0,4,2,2,0,4,4,6,0,
+        2,5,0,0,0,4,6,0,2,4,2,0,0,4,7,0,
+        6,6,0,0,0,3,5,0,3,2,2,0,3,4,6,0,
+        2,5,0,0,0,4,6,0,2,4,2,0,0,4,7,0,
+        6,6,0,0,0,3,5,0,4,2,2,0,5,4,6,0,
+        2,5,0,0,0,4,6,0,2,4,2,0,0,4,7,0,
+        0,6,0,0,3,3,3,0,2,2,2,0,4,4,4,0,
+        2,6,0,0,4,4,4,0,2,5,2,0,0,5,0,0,
+        2,6,2,0,3,3,3,0,2,2,2,0,4,4,4,0,
+        2,5,0,0,4,4,4,0,2,4,2,0,4,4,4,0,
+        2,6,0,0,3,3,5,0,2,2,2,0,4,4,6,0,
+        2,5,0,0,0,4,6,0,2,4,2,0,0,4,7,0,
+        2,6,0,0,3,3,5,0,2,2,2,0,4,4,6,0,
+        2,5,0,0,0,4,6,0,2,4,2,0,0,4,7,0
+    };
+    Equal(256, baseCycles.Length, "opcode cycle table size");
     foreach (byte opcode in officialOpcodes)
     {
         Emulator emulator = NewEmulator(opcode, 0x00, 0x80);
+        SetBranchNotTakenFlags(emulator, opcode);
         string? diagnostic = null;
         emulator.Diagnostic += message => diagnostic = message;
-        emulator.Step();
+        Equal(baseCycles[opcode], (byte)emulator.Step(), $"official opcode 0x{opcode:X2} base cycles");
         True(diagnostic is null, $"official opcode 0x{opcode:X2} is dispatched");
         True(!emulator.CPU_Halted, $"official opcode 0x{opcode:X2} does not halt as unsupported");
+    }
+}
+
+static void SetBranchNotTakenFlags(Emulator emulator, byte opcode)
+{
+    switch (opcode)
+    {
+        case 0x10: emulator.flag_Negative = true; break;
+        case 0x30: emulator.flag_Negative = false; break;
+        case 0x50: emulator.flag_Overflow = true; break;
+        case 0x70: emulator.flag_Overflow = false; break;
+        case 0x90: emulator.flag_Carry = true; break;
+        case 0xB0: emulator.flag_Carry = false; break;
+        case 0xD0: emulator.flag_Zero = true; break;
+        case 0xF0: emulator.flag_Zero = false; break;
     }
 }
 
