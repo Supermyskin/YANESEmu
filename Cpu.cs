@@ -362,11 +362,22 @@ public partial class Emulator
         int totalCycles = elapsedCpuCycles + dmaCycles;
         TotalCycles += totalCycles;
         apu.Clock(totalCycles);
+        if (!servicingInterrupt && opcode != 0)
+        {
+            bool delayedInstruction = opcode is 0x58 or 0x78 or 0x28;
+            irqPollDisable = delayedInstruction
+                ? iFlagAtInstructionStart
+                : flag_InterruptDisable;
+            irqPollPending = IRQRequested && !irqPollDisable;
+            if (!delayedInstruction) irqPollDeferred = false;
+            else irqPollDeferred = true;
+        }
         return totalCycles;
     }
 
     private int ServiceInterrupt(ushort vector, bool isNmi)
     {
+        servicingInterrupt = true;
         Push((byte)(ProgramCounter >> 8));
         Push((byte)ProgramCounter);
         byte status = (byte)((flag_Carry ? 1 : 0) | (flag_Zero ? 2 : 0) |
@@ -374,9 +385,16 @@ public partial class Emulator
             (flag_Overflow ? 0x40 : 0) | (flag_Negative ? 0x80 : 0));
         Push(status); // B is clear for hardware interrupts.
         flag_InterruptDisable = true;
-        ProgramCounter = ReadWord(vector);
+        if (!isNmi && NMIRequested) { vector = 0xFFFA; isNmi = true; }
+        byte vectorLow = Read(vector);
+        if (!isNmi && NMIRequested) { vector = 0xFFFA; isNmi = true; vectorLow = Read(vector); }
+        byte vectorHigh = Read((ushort)(vector + 1));
+        ProgramCounter = (ushort)((vectorHigh << 8) | vectorLow);
         if (isNmi) NMIRequested = false;
-        return FinishStep(7);
+        int cycles = FinishStep(7);
+        servicingInterrupt = false;
+        irqPollPending = false;
+        return cycles;
     }
 
     public int Step()
@@ -385,11 +403,15 @@ public partial class Emulator
 
         cpuStepActive = true;
         cpuBusCycles = 0;
+        iFlagAtInstructionStart = flag_InterruptDisable;
 
         if (NMIRequested)
             return ServiceInterrupt(0xFFFA, isNmi: true);
-        if (IRQRequested && !flag_InterruptDisable)
+        if (irqPollPending)
+        {
+            irqPollPending = false;
             return ServiceInterrupt(0xFFFE, isNmi: false);
+        }
 
         ushort pcBeforeStep = ProgramCounter;
         opcode = Read(ProgramCounter++);
@@ -821,8 +843,15 @@ public partial class Emulator
                 flag_InterruptDisable = true;
 
                 // Jump to IRQ/BRK Vector ($FFFE/$FFFF)
-                byte brkLow = Read(0xFFFE);
-                byte brkHigh = Read(0xFFFF);
+                ushort brkVector = NMIRequested ? (ushort)0xFFFA : (ushort)0xFFFE;
+                byte brkLow = Read(brkVector);
+                if (NMIRequested && brkVector != 0xFFFA)
+                {
+                    brkVector = 0xFFFA;
+                    brkLow = Read(brkVector);
+                }
+                byte brkHigh = Read((ushort)(brkVector + 1));
+                if (brkVector == 0xFFFA) NMIRequested = false;
                 ProgramCounter = (ushort)((brkHigh << 8) | brkLow);
                 return FinishStep(7);
 

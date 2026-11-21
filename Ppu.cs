@@ -28,6 +28,10 @@ public partial class Emulator
     private readonly byte[] backgroundPixels = new byte[256 * 240];
     private readonly int[] scanlineSprites = new int[8];
     private int scanlineSpriteCount;
+    private int spriteEvaluationTarget;
+    private int spriteEvaluationIndex;
+    private int spriteEvaluationHeight;
+    private int spriteEvaluationByte;
     private static readonly uint[] NesPalette =
     {
         0x666666,0x002A88,0x1412A7,0x3B00A4,0x5C007E,0x6E0040,0x6C0700,0x561D00,0x333500,0x0B4800,0x005200,0x004F08,0x00404D,0x000000,0x000000,0x000000,
@@ -183,9 +187,27 @@ public partial class Emulator
                 NMIRequested = false;
             }
 
+            // Sprite evaluation prepares the next scanline. In particular, the
+            // pre-render scanline (261) prepares visible scanline 0.
+            if (ppuDot == 1)
+            {
+                int nextScanline = (ppuScanline + 1) % 262;
+                if (nextScanline < 240) BeginSpriteEvaluation(nextScanline);
+            }
+            if (ppuDot is >= 65 and <= 256 && spriteEvaluationTarget >= 0)
+            {
+                if (scanlineSpriteCount < 8)
+                {
+                    if ((ppuDot - 65) % 3 == 0) EvaluateNextSprite();
+                }
+                else
+                {
+                    EvaluateOverflowByte();
+                }
+            }
+
             if (ppuScanline < 240)
             {
-                if (ppuDot == 1) EvaluateSpritesForScanline(ppuScanline);
                 if (ppuDot is >= 1 and <= 256)
                 {
                     int x = ppuDot - 1;
@@ -292,7 +314,8 @@ public partial class Emulator
                 | (((ReadPpuMemory((ushort)(pattern + 8)) >> bit) & 1) << 1);
             if (color == 0) continue;
 
-            if (sprite == 0 && bgColor != 0 && x < 255 && (ppuMask & 0x18) == 0x18)
+            if (sprite == 0 && bgColor != 0 && (x >= 8 || (ppuMask & 0x02) != 0)
+                && x < 255 && (ppuMask & 0x18) == 0x18)
                 ppuStatus |= 0x40;
 
             if ((attributes & 0x20) == 0 || bgColor == 0)
@@ -303,39 +326,42 @@ public partial class Emulator
 
     private void EvaluateSpritesForScanline(int y)
     {
+        BeginSpriteEvaluation(y);
+        while (spriteEvaluationIndex < 64 && scanlineSpriteCount < 8) EvaluateNextSprite();
+        while (spriteEvaluationIndex < 64) EvaluateOverflowByte();
+        spriteEvaluationTarget = -1;
+    }
+
+    private void BeginSpriteEvaluation(int y)
+    {
         scanlineSpriteCount = 0;
-        int spriteHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
-        int spriteIndex = 0;
-        for (int sprite = 0; sprite < 64; sprite++)
+        spriteEvaluationTarget = y;
+        spriteEvaluationIndex = 0;
+        spriteEvaluationHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
+        spriteEvaluationByte = 0;
+    }
+
+    private void EvaluateNextSprite()
+    {
+        int sprite = spriteEvaluationIndex++;
+        int row = SpriteRowForScanline(oam[sprite * 4], spriteEvaluationTarget);
+        if ((uint)row < spriteEvaluationHeight)
         {
-            int row = SpriteRowForScanline(oam[sprite * 4], y);
-            if ((uint)row >= spriteHeight) continue;
-            if (scanlineSpriteCount < scanlineSprites.Length)
-            {
-                scanlineSprites[scanlineSpriteCount++] = sprite;
-                spriteIndex = sprite + 1;
-                if (scanlineSpriteCount == scanlineSprites.Length) break;
-            }
+            scanlineSprites[scanlineSpriteCount++] = sprite;
         }
+    }
 
-        if (scanlineSpriteCount < 8) return;
-
-        // After secondary OAM fills, the PPU's broken n/m counters walk diagonally
-        // through OAM bytes. Non-Y bytes can therefore be mistaken for Y positions.
-        int byteIndex = 0;
-        while (spriteIndex < 64)
+    private void EvaluateOverflowByte()
+    {
+        if (spriteEvaluationIndex >= 64) return;
+        byte value = oam[spriteEvaluationIndex * 4 + spriteEvaluationByte];
+        int row = SpriteRowForScanline(value, spriteEvaluationTarget);
+        if ((uint)row < spriteEvaluationHeight)
         {
-            byte value = oam[spriteIndex * 4 + byteIndex];
-            int row = SpriteRowForScanline(value, y);
-            if ((uint)row < spriteHeight)
-            {
-                ppuStatus |= 0x20;
-                return;
-            }
-
-            spriteIndex++;
-            byteIndex = (byte)((byteIndex + 1) & 3);
+            ppuStatus |= 0x20;
+            spriteEvaluationByte = (spriteEvaluationByte + 1) & 3;
         }
+        spriteEvaluationIndex++;
     }
 
     private static int SpriteRowForScanline(byte spriteY, int scanline) =>

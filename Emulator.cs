@@ -16,6 +16,11 @@ public partial class Emulator
     private bool dmaTransferActive;
     private int cpuBusCycles;
     private byte dataBus;
+    private bool irqPollPending;
+    private bool irqPollDisable;
+    private bool iFlagAtInstructionStart;
+    private bool servicingInterrupt;
+    private bool irqPollDeferred;
     public bool CPU_Halted;
     public bool IRQRequested { get; private set; }
     public bool flag_Carry, flag_Zero, flag_InterruptDisable, flag_Decimal, flag_Overflow, flag_Negative;
@@ -23,7 +28,11 @@ public partial class Emulator
     public event Action? FrameReady;
     public event Action<string>? Diagnostic;
 
-    public void SetIRQLine(bool asserted) => IRQRequested = asserted;
+    public void SetIRQLine(bool asserted)
+    {
+        IRQRequested = asserted;
+        if (asserted && !flag_InterruptDisable && !irqPollDeferred) irqPollPending = true;
+    }
     public AudioSampleBuffer AudioSamples => apu.Output;
 
     public byte Read(ushort addr)

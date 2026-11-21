@@ -611,13 +611,14 @@ static void IrqIsMaskedAndServiced()
     emulator.ROM[0x7FFE] = 0x34;
     emulator.ROM[0x7FFF] = 0x12;
     emulator.stackPointer = 0xFD;
-    emulator.SetIRQLine(true);
     emulator.flag_InterruptDisable = true;
+    emulator.SetIRQLine(true);
     Equal(2, emulator.Step(), "masked IRQ executes next instruction");
     Equal((ushort)0x8001, emulator.ProgramCounter, "masked IRQ preserves PC flow");
     Equal((byte)0xFD, emulator.stackPointer, "masked IRQ does not push state");
 
     emulator.flag_InterruptDisable = false;
+    emulator.SetIRQLine(true);
     emulator.flag_Carry = true;
     Equal(7, emulator.Step(), "IRQ service cycles");
     Equal((ushort)0x1234, emulator.ProgramCounter, "IRQ vector");
