@@ -333,6 +333,8 @@ public partial class Emulator
 
     private int FinishStep(int cycles)
     {
+        cycles += pendingDmaCycles;
+        pendingDmaCycles = 0;
         TotalCycles += cycles;
         apu.Clock(cycles);
         ClockPpu(cycles * 3);
@@ -391,6 +393,11 @@ public partial class Emulator
 
             case 0xA9: // LDA Immediate
                 A = Read(ProgramCounter++);
+                SetZeroNegative(A);
+                return FinishStep(2);
+
+            case 0xAB: // LXA (ANE) Immediate (unstable unofficial opcode)
+                A = X = (byte)((A | 0xEE) & Read(ProgramCounter++));
                 SetZeroNegative(A);
                 return FinishStep(2);
 
@@ -909,6 +916,12 @@ public partial class Emulator
                 SetZeroNegative(A);
                 return FinishStep(4 + (pageCrossed ? 1 : 0));
 
+            case 0xBB: // LAS Absolute,Y (unofficial)
+                ReadOperands_AbsoluteYAddressed();
+                A = X = stackPointer = (byte)(Read(addressBus) & stackPointer);
+                SetZeroNegative(A);
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
+
             case 0xA1: // LDA (Indirect,X)
                 ReadOperands_IndirectXAddressed();
                 A = Read(addressBus);
@@ -1012,6 +1025,39 @@ public partial class Emulator
             case 0x99: // STA Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
                 Write(addressBus, A);
+                return FinishStep(5);
+
+            case 0x9B: // SHS (TAS) Absolute,Y (unstable unofficial opcode)
+                ReadOperands_AbsoluteYAddressed();
+                stackPointer = (byte)(A & X);
+                byte shsValue = (byte)(stackPointer & ((addressBus >> 8) + 1));
+                if (pageCrossed)
+                    addressBus = (ushort)((shsValue << 8) | (addressBus & 0x00FF));
+                Write(addressBus, shsValue);
+                return FinishStep(5);
+
+            case 0x9C: // SHY Absolute,X (unstable unofficial opcode)
+                ReadOperands_AbsoluteXAddressed();
+                byte shyValue = (byte)(Y & ((addressBus >> 8) + 1));
+                if (pageCrossed)
+                    addressBus = (ushort)((shyValue << 8) | (addressBus & 0x00FF));
+                Write(addressBus, shyValue);
+                return FinishStep(5);
+
+            case 0x9E: // SHX Absolute,Y (unstable unofficial opcode)
+                ReadOperands_AbsoluteYAddressed();
+                byte shxValue = (byte)(X & ((addressBus >> 8) + 1));
+                if (pageCrossed)
+                    addressBus = (ushort)((shxValue << 8) | (addressBus & 0x00FF));
+                Write(addressBus, shxValue);
+                return FinishStep(5);
+
+            case 0x9F: // SHA Absolute,Y (unstable unofficial opcode)
+                ReadOperands_AbsoluteYAddressed();
+                byte shaAbsoluteYValue = (byte)(A & X & ((addressBus >> 8) + 1));
+                if (pageCrossed)
+                    addressBus = (ushort)((shaAbsoluteYValue << 8) | (addressBus & 0x00FF));
+                Write(addressBus, shaAbsoluteYValue);
                 return FinishStep(5);
 
             case 0x81: // STA (Indirect,X)
@@ -1354,6 +1400,11 @@ public partial class Emulator
 
             case 0x6B: // ARR immediate
                 Op_ARR(Read(ProgramCounter++));
+                return FinishStep(2);
+
+            case 0x8B: // XAA (ANE) immediate (unstable unofficial opcode)
+                A = (byte)((A | 0xEE) & X & Read(ProgramCounter++));
+                SetZeroNegative(A);
                 return FinishStep(2);
 
             case 0xCB: // AXS immediate

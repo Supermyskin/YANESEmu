@@ -15,15 +15,19 @@ public partial class Emulator
     private byte scrollY;
     private int ppuScanline = 261;
     private int ppuDot;
+    private bool oddFrame;
     public bool NMIRequested { get; private set; }
     private bool verticalNametableMirroring;
-    private bool chrRam;
+    private bool chrRam = true;
     private readonly byte[] ppuRegisters = new byte[8];
     private readonly byte[] nametableRam = new byte[0x800];
     private readonly byte[] paletteRam = new byte[0x20];
     private readonly byte[] oam = new byte[0x100];
 
     private readonly uint[] frameBuffer = new uint[256 * 240];
+    private readonly byte[] backgroundPixels = new byte[256 * 240];
+    private readonly int[] scanlineSprites = new int[8];
+    private int scanlineSpriteCount;
     private static readonly uint[] NesPalette =
     {
         0x666666,0x002A88,0x1412A7,0x3B00A4,0x5C007E,0x6E0040,0x6C0700,0x561D00,0x333500,0x0B4800,0x005200,0x004F08,0x00404D,0x000000,0x000000,0x000000,
@@ -37,6 +41,8 @@ public partial class Emulator
         switch (register)
         {
             case 0x2002:
+                if (ppuScanline == 241 && ppuDot <= 2)
+                    ppuStatus &= 0x7F;
                 byte status = (byte)((ppuStatus & 0xE0) | (ppuRegisters[2] & 0x1F));
                 ppuStatus &= 0x7F;
                 writeLatch = false;
@@ -63,7 +69,7 @@ public partial class Emulator
             case 0x2000:
                 ppuControl = value;
                 tramAddr = (ushort)((tramAddr & 0xF3FF) | ((value & 3) << 10));
-                if ((ppuStatus & 0x80) != 0 && (ppuControl & 0x80) != 0) NMIRequested = true;
+                NMIRequested = (ppuStatus & 0x80) != 0 && (ppuControl & 0x80) != 0;
                 break;
             case 0x2001:
                 ppuMask = value;
@@ -107,6 +113,8 @@ public partial class Emulator
                 break;
         }
     }
+
+    private void WriteOamDmaByte(byte value) => oam[oamAddress++] = value;
 
     private void IncrementVramAddress()
     {
@@ -166,8 +174,7 @@ public partial class Emulator
             if (ppuScanline == 241 && ppuDot == 2)
             {
                 ppuStatus |= 0x80;
-                RenderBackground();
-                if ((ppuControl & 0x80) != 0) NMIRequested = true;
+                NMIRequested = (ppuControl & 0x80) != 0;
             }
             else if (ppuScanline == 261 && ppuDot == 2)
             {
@@ -175,131 +182,139 @@ public partial class Emulator
                 NMIRequested = false;
             }
 
+            if (ppuScanline < 240)
+            {
+                if (ppuDot == 1) EvaluateSpritesForScanline(ppuScanline);
+                if (ppuDot is >= 1 and <= 256)
+                {
+                    int x = ppuDot - 1;
+                    RenderPixel(x, ppuScanline);
+                    if (ppuScanline == 239 && x == 255) PublishFrame();
+                }
+            }
+
             if (ppuDot >= 341)
             {
                 ppuDot = 0;
                 ppuScanline++;
-                if (ppuScanline >= 262) ppuScanline = 0;
+                if (ppuScanline >= 262)
+                {
+                    ppuScanline = 0;
+                    oddFrame = !oddFrame;
+                }
+            }
+            else if (ppuScanline == 261 && ppuDot == 340 && oddFrame && (ppuMask & 0x18) != 0)
+            {
+                ppuDot = 0;
+                ppuScanline = 0;
+                oddFrame = !oddFrame;
             }
         }
     }
 
     private void RenderBackground()
     {
-        byte[] backgroundPixels = new byte[frameBuffer.Length];
-        byte backdrop = ReadPpuMemory(0x3F00);
-        int baseNametable = ppuControl & 3;
-        int patternBase = (ppuControl & 0x10) != 0 ? 0x1000 : 0;
         for (int y = 0; y < 240; y++)
         {
-            int worldY = (y + scrollY) % 480;
-            int ntY = worldY / 240;
-            int tileY = (worldY % 240) / 8;
-            int pixelY = worldY & 7;
+            EvaluateSpritesForScanline(y);
             for (int x = 0; x < 256; x++)
-            {
-                int pixelIndex = y * 256 + x;
-                if ((ppuMask & 0x08) == 0 || (x < 8 && (ppuMask & 0x02) == 0))
-                {
-                    frameBuffer[pixelIndex] = GetNesColor(backdrop);
-                    continue;
-                }
-                int worldX = (x + scrollX) % 512;
-                int ntX = worldX / 256;
-                int tileX = (worldX % 256) / 8;
-                int pixelX = worldX & 7;
-                int nametable = (baseNametable + ntY * 2 + ntX) & 3;
-                ushort ntAddress = (ushort)(0x2000 + nametable * 0x400 + tileY * 32 + tileX);
-                byte tile = ReadPpuMemory(ntAddress);
-                byte low = ReadPpuMemory((ushort)(patternBase + tile * 16 + pixelY));
-                byte high = ReadPpuMemory((ushort)(patternBase + tile * 16 + pixelY + 8));
-                int colorIndex = ((low >> (7 - pixelX)) & 1) | (((high >> (7 - pixelX)) & 1) << 1);
-                int palette = 0;
-                if (colorIndex != 0)
-                {
-                    ushort attributeAddress = (ushort)(0x23C0 + nametable * 0x400 + (tileY / 4) * 8 + tileX / 4);
-                    byte attribute = ReadPpuMemory(attributeAddress);
-                    int shift = ((tileY & 2) << 1) | (tileX & 2);
-                    palette = (attribute >> shift) & 3;
-                }
-                byte nesColor = ReadPpuMemory((ushort)(0x3F00 + palette * 4 + colorIndex));
-                backgroundPixels[pixelIndex] = (byte)colorIndex;
-                frameBuffer[pixelIndex] = GetNesColor(nesColor);
-            }
+                RenderPixel(x, y);
         }
-
-        RenderSprites(backgroundPixels);
         PublishFrame();
     }
 
-    private void RenderSprites(byte[] backgroundPixels)
+    private void RenderPixel(int x, int y)
     {
-        if ((ppuMask & 0x10) == 0) return;
-        int spriteHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
-
-        for (int y = 0; y < 240; y++)
+        int frameIndex = y * 256 + x;
+        byte backdrop = ReadPpuMemory(0x3F00);
+        int bgColor = 0;
+        int bgPalette = 0;
+        if ((ppuMask & 0x08) != 0 && (x >= 8 || (ppuMask & 0x02) != 0))
         {
-            int[] scanlineSprites = new int[8];
-            int selectedCount = 0;
-            for (int sprite = 0; sprite < 64; sprite++)
+            int worldX = (x + scrollX) % 512;
+            int worldY = (y + scrollY) % 480;
+            int ntX = worldX / 256;
+            int ntY = worldY / 240;
+            int tileX = (worldX % 256) / 8;
+            int tileY = (worldY % 240) / 8;
+            int pixelX = worldX & 7;
+            int pixelY = worldY & 7;
+            int nametable = ((ppuControl & 3) + ntY * 2 + ntX) & 3;
+            byte tile = ReadPpuMemory((ushort)(0x2000 + nametable * 0x400 + tileY * 32 + tileX));
+            int patternBase = (ppuControl & 0x10) != 0 ? 0x1000 : 0;
+            int pattern = patternBase + tile * 16 + pixelY;
+            bgColor = ((ReadPpuMemory((ushort)pattern) >> (7 - pixelX)) & 1)
+                | (((ReadPpuMemory((ushort)(pattern + 8)) >> (7 - pixelX)) & 1) << 1);
+            if (bgColor != 0)
             {
-                int row = y - (oam[sprite * 4] + 1);
-                if ((uint)row >= spriteHeight) continue;
-                if (selectedCount == scanlineSprites.Length)
-                {
-                    ppuStatus |= 0x20;
-                    continue;
-                }
-                scanlineSprites[selectedCount++] = sprite;
+                byte attribute = ReadPpuMemory((ushort)(0x23C0 + nametable * 0x400 + (tileY / 4) * 8 + tileX / 4));
+                int shift = ((tileY & 2) << 1) | (tileX & 2);
+                bgPalette = (attribute >> shift) & 3;
             }
+        }
 
-            for (int x = (ppuMask & 0x04) != 0 ? 0 : 8; x < 256; x++)
+        backgroundPixels[frameIndex] = (byte)bgColor;
+        frameBuffer[frameIndex] = (ppuMask & 0x08) == 0
+            ? 0
+            : GetNesColor(ReadPpuMemory((ushort)(0x3F00 + bgPalette * 4 + bgColor)));
+        if ((ppuMask & 0x10) == 0 || (x < 8 && (ppuMask & 0x04) == 0)) return;
+
+        int spriteHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
+        for (int selected = 0; selected < scanlineSpriteCount; selected++)
+        {
+            int sprite = scanlineSprites[selected];
+            int oamIndex = sprite * 4;
+            int top = oam[oamIndex] == 0xFF ? 0 : oam[oamIndex] + 1;
+            int row = y - top;
+            int column = x - oam[oamIndex + 3];
+            if ((uint)row >= spriteHeight || (uint)column >= 8) continue;
+
+            byte tile = oam[oamIndex + 1];
+            byte attributes = oam[oamIndex + 2];
+            if ((attributes & 0x80) != 0) row = spriteHeight - 1 - row;
+            if ((attributes & 0x40) != 0) column = 7 - column;
+            int patternBase;
+            int tileNumber;
+            if (spriteHeight == 16)
             {
-                int frameIndex = y * 256 + x;
-                for (int selected = 0; selected < selectedCount; selected++)
-                {
-                    int sprite = scanlineSprites[selected];
-                    int oamIndex = sprite * 4;
-                    int top = oam[oamIndex] + 1;
-                    int left = oam[oamIndex + 3];
-                    int row = y - top;
-                    int column = x - left;
-                    if ((uint)row >= spriteHeight || (uint)column >= 8) continue;
+                patternBase = (tile & 1) * 0x1000;
+                tileNumber = (tile & 0xFE) + (row >= 8 ? 1 : 0);
+            }
+            else
+            {
+                patternBase = (ppuControl & 0x08) != 0 ? 0x1000 : 0;
+                tileNumber = tile;
+            }
+            int pattern = patternBase + tileNumber * 16 + (row & 7);
+            int bit = 7 - column;
+            int color = ((ReadPpuMemory((ushort)pattern) >> bit) & 1)
+                | (((ReadPpuMemory((ushort)(pattern + 8)) >> bit) & 1) << 1);
+            if (color == 0) continue;
 
-                    byte tile = oam[oamIndex + 1];
-                    byte attributes = oam[oamIndex + 2];
-                    if ((attributes & 0x80) != 0) row = spriteHeight - 1 - row;
-                    if ((attributes & 0x40) != 0) column = 7 - column;
-                    int tileNumber;
-                    int patternBase;
-                    if (spriteHeight == 16)
-                    {
-                        patternBase = (tile & 1) * 0x1000;
-                        tileNumber = (tile & 0xFE) + (row >= 8 ? 1 : 0);
-                    }
-                    else
-                    {
-                        patternBase = (ppuControl & 0x08) != 0 ? 0x1000 : 0;
-                        tileNumber = tile;
-                    }
-                    int pattern = patternBase + tileNumber * 16 + (row & 7);
-                    int bit = 7 - column;
-                    int color = ((ReadPpuMemory((ushort)pattern) >> bit) & 1)
-                        | (((ReadPpuMemory((ushort)(pattern + 8)) >> bit) & 1) << 1);
-                    if (color == 0) continue;
+            if (sprite == 0 && bgColor != 0 && x < 255 && (ppuMask & 0x18) == 0x18)
+                ppuStatus |= 0x40;
 
-                    if (sprite == 0 && backgroundPixels[frameIndex] != 0 && x < 255
-                        && (ppuMask & 0x18) == 0x18)
-                        ppuStatus |= 0x40;
+            if ((attributes & 0x20) == 0 || bgColor == 0)
+                frameBuffer[frameIndex] = GetNesColor(ReadPpuMemory((ushort)(0x3F10 + (attributes & 3) * 4 + color)));
+            break;
+        }
+    }
 
-                    if ((attributes & 0x20) == 0 || backgroundPixels[frameIndex] == 0)
-                    {
-                        int palette = attributes & 3;
-                        byte nesColor = ReadPpuMemory((ushort)(0x3F10 + palette * 4 + color));
-                        frameBuffer[frameIndex] = GetNesColor(nesColor);
-                    }
-                    break;
-                }
+    private void EvaluateSpritesForScanline(int y)
+    {
+        scanlineSpriteCount = 0;
+        int spriteHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
+        for (int sprite = 0; sprite < 64; sprite++)
+        {
+            int top = oam[sprite * 4] == 0xFF ? 0 : oam[sprite * 4] + 1;
+            int row = y - top;
+            if ((uint)row >= spriteHeight) continue;
+            if (scanlineSpriteCount < scanlineSprites.Length)
+                scanlineSprites[scanlineSpriteCount++] = sprite;
+            else
+            {
+                ppuStatus |= 0x20;
+                break;
             }
         }
     }

@@ -30,7 +30,7 @@ Run("BRK pushes the software-interrupt status", BrkPushesBreakStatus);
 Run("NROM cartridge loads reset vector and CHR RAM", NromLoads);
 Run("CPU reset preserves the exact reset vector and initializes state", CpuResetState);
 Run("emulator publishes frames without console output", EmulatorPublishesFrames);
-Run("unsupported opcodes publish diagnostics", UnsupportedOpcodesPublishDiagnostics);
+Run("KIL opcodes publish diagnostics", KilOpcodesPublishDiagnostics);
 RunOptionalNestest();
 Console.WriteLine("All emulator checks passed.");
 
@@ -531,6 +531,8 @@ static void PpuDetectsSpriteZeroHit()
     Emulator emulator = new();
     SetPpuAddress(emulator, 0x0000);
     emulator.Write(0x2007, 0x80); // background tile 0, first pixel
+    SetPpuAddress(emulator, 0x0001);
+    emulator.Write(0x2007, 0x80); // background tile 0, second row
     SetPpuAddress(emulator, 0x0010);
     emulator.Write(0x2007, 0x80); // sprite tile 1, first pixel
     SetPpuAddress(emulator, 0x3F01);
@@ -699,15 +701,15 @@ static void EmulatorPublishesFrames()
     Equal(256 * 240, emulator.GetFrameBuffer().Length, "framebuffer pixel count");
 }
 
-static void UnsupportedOpcodesPublishDiagnostics()
+static void KilOpcodesPublishDiagnostics()
 {
-    Emulator emulator = NewEmulator(0x8B);
+    Emulator emulator = NewEmulator(0x02);
     string? diagnostic = null;
     emulator.Diagnostic += message => diagnostic = message;
     emulator.Step();
     True(emulator.CPU_Halted, "unsupported opcode halt");
-    True(diagnostic?.Contains("Unsupported opcode ANE (0x8B) at PC: 0x8000", StringComparison.Ordinal) == true,
-        "unsupported opcode diagnostic");
+    True(diagnostic?.Contains("Unofficial KIL opcode 0x02", StringComparison.Ordinal) == true,
+        "KIL diagnostic");
 }
 
 static Emulator NewEmulator(params byte[] program)

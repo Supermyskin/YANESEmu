@@ -11,6 +11,7 @@ public partial class Emulator
     public long TotalCycles = 7;
     private bool pageCrossed;
     private readonly NesApu apu = new();
+    private int pendingDmaCycles;
     public bool CPU_Halted;
     public bool IRQRequested { get; private set; }
     public bool flag_Carry, flag_Zero, flag_InterruptDisable, flag_Decimal, flag_Overflow, flag_Negative;
@@ -52,7 +53,14 @@ public partial class Emulator
 
     public void Write(ushort addr, byte value)
     {
-        if (addr == 0x4016)
+        if (addr == 0x4014)
+        {
+            int start = value << 8;
+            for (int i = 0; i < 256; i++)
+                WriteOamDmaByte(Read((ushort)(start + i)));
+            pendingDmaCycles += (int)(513 + (TotalCycles & 1));
+        }
+        else if (addr == 0x4016)
         {
             WriteControllerStrobe(value);
         }

@@ -43,16 +43,17 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - The core run loop accepts a cancellation token so callers can stop continuous execution.
 - ROM diagnostics and file access errors are shown in red in the app status area.
 
-The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, SAX, SBC, ANC, ALR, ARR, AXS, SHA, SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; SHA is unstable and only approximates hardware page-cross behavior. Unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, full APU, and mapper support remain incomplete.
+The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, LXA, XAA, SAX, SBC, ANC, ALR, ARR, AXS, SHA (indirect,Y and absolute,Y), SHS (absolute,Y), SHY (absolute,X), SHX (absolute,Y), LAS (absolute,Y), SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; LXA and XAA use the common `$EE` magic-value approximation, and SHA, SHS, SHY, and SHX approximate unstable page-cross behavior. Unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, full APU, and mapper support remain incomplete.
 
 ### PPU
 
 - CPU access to PPU registers `$2000–$2007`, including register mirroring.
 - VRAM address and scroll write latches, buffered `$2007` reads, and configurable VRAM increment.
 - CHR ROM/RAM, two-screen nametable RAM with horizontal or vertical NROM mirroring, and palette RAM mirrors.
-- PPU cycle advancement at three dots per CPU cycle, basic vblank status, and NMI request.
-- 256×240 background rendering from nametable, attribute, pattern, palette, and scroll data.
-- 8×8 and 8×16 OAM sprites with transparency, flips, palettes, background priority, sprite-zero hit, and the eight-sprites-per-scanline limit.
+- PPU dot advancement at three dots per CPU cycle, odd-frame dot skipping while rendering, vblank status-read suppression near vblank start, and NMI request.
+- Background and sprite pixels are rendered as visible PPU dots advance, so register and memory changes can affect later pixels in a frame.
+- 8×8 and 8×16 OAM sprites with transparency, flips, palettes, background priority, sprite-zero hit, Y-coordinate wraparound, scanline sprite selection, and the eight-sprites-per-scanline limit.
+- OAM DMA via `$4014`, including a 256-byte transfer and CPU stall time.
 - 256×240 framebuffer displayed in the Avalonia desktop window.
 
 ### Controller input
@@ -68,7 +69,7 @@ The core matches the nestest CPU reference log. Timing advances per instruction,
 - Choose **Audio → Audio Settings…** to set master volume or mute. Preferences are saved in the user's application-data folder.
 - The DMC sample channel and some cycle-accurate APU details are not implemented.
 
-Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
+Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are not implemented. CPU execution advances PPU time after each instruction, so CPU register accesses are not synchronized to individual PPU dots. Sprite overflow uses a simplified scanline evaluation and does not reproduce the hardware evaluation bug. Games relying on exact fetch timing or that overflow quirk may still render incorrectly.
 
 ## Project layout
 

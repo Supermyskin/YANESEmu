@@ -53,6 +53,7 @@ public partial class Emulator
         scrollY = 0;
         ppuScanline = 261;
         ppuDot = 0;
+        oddFrame = false;
         NMIRequested = false;
         IRQRequested = false;
         writeLatch = false;
