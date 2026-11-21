@@ -21,6 +21,7 @@ Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
 Run("PPU renders 8x8 sprites from OAM and CHR", PpuRendersSprites);
+Run("PPU renders 8x16 sprites and reports scanline overflow", PpuRendersTallSpritesAndOverflow);
 Run("PPU raises NMI at vblank", PpuRaisesNmiAtVblank);
 Run("NMI enters through its vector and pushes hardware status", PpuNmiIsServiced);
 Run("IRQ obeys the interrupt mask and preserves the asserted line", IrqIsMaskedAndServiced);
@@ -499,6 +500,29 @@ static void PpuRendersSprites()
     uint[] frame = emulator.GetFrameBuffer();
     Equal(0x002A88u, frame[1 * 256 + 10], "opaque sprite pixel");
     Equal(0u, frame[1 * 256 + 9], "transparent pixel remains backdrop");
+}
+
+static void PpuRendersTallSpritesAndOverflow()
+{
+    Emulator emulator = new();
+    SetPpuAddress(emulator, 0x0030); // 8x16 tile 2, second tile row (tile 3)
+    emulator.Write(0x2007, 0x80);
+    SetPpuAddress(emulator, 0x3F11);
+    emulator.Write(0x2007, 0x01);
+    emulator.Write(0x2000, 0x20); // select 8x16 sprites
+    emulator.Write(0x2003, 0);
+    for (int sprite = 0; sprite < 9; sprite++)
+    {
+        emulator.Write(0x2004, 0);
+        emulator.Write(0x2004, 2);
+        emulator.Write(0x2004, 0);
+        emulator.Write(0x2004, (byte)(sprite * 8));
+    }
+    emulator.Write(0x2001, 0x14);
+    emulator.EmulatePPU();
+
+    Equal(0x002A88u, emulator.GetFrameBuffer()[9 * 256], "lower tile in 8x16 sprite");
+    True((emulator.Read(0x2002) & 0x20) != 0, "sprite overflow status");
 }
 
 static void PpuRaisesNmiAtVblank()

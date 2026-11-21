@@ -228,36 +228,64 @@ public partial class Emulator
             }
         }
 
-        RenderSprites(backgroundPixels, backdrop);
+        RenderSprites(backgroundPixels);
         PublishFrame();
     }
 
-    private void RenderSprites(byte[] backgroundPixels, byte backdrop)
+    private void RenderSprites(byte[] backgroundPixels)
     {
         if ((ppuMask & 0x10) == 0) return;
+        int spriteHeight = (ppuControl & 0x20) != 0 ? 16 : 8;
 
         for (int y = 0; y < 240; y++)
         {
+            int[] scanlineSprites = new int[8];
+            int selectedCount = 0;
+            for (int sprite = 0; sprite < 64; sprite++)
+            {
+                int row = y - (oam[sprite * 4] + 1);
+                if ((uint)row >= spriteHeight) continue;
+                if (selectedCount == scanlineSprites.Length)
+                {
+                    ppuStatus |= 0x20;
+                    continue;
+                }
+                scanlineSprites[selectedCount++] = sprite;
+            }
+
             for (int x = (ppuMask & 0x04) != 0 ? 0 : 8; x < 256; x++)
             {
                 int frameIndex = y * 256 + x;
-                for (int sprite = 0; sprite < 64; sprite++)
+                for (int selected = 0; selected < selectedCount; selected++)
                 {
+                    int sprite = scanlineSprites[selected];
                     int oamIndex = sprite * 4;
                     int top = oam[oamIndex] + 1;
                     int left = oam[oamIndex + 3];
                     int row = y - top;
                     int column = x - left;
-                    if ((uint)row >= 8 || (uint)column >= 8) continue;
+                    if ((uint)row >= spriteHeight || (uint)column >= 8) continue;
 
                     byte tile = oam[oamIndex + 1];
                     byte attributes = oam[oamIndex + 2];
-                    if ((attributes & 0x80) != 0) row = 7 - row;
+                    if ((attributes & 0x80) != 0) row = spriteHeight - 1 - row;
                     if ((attributes & 0x40) != 0) column = 7 - column;
-                    int pattern = ((ppuControl & 0x08) != 0 ? 0x1000 : 0) + tile * 16;
+                    int tileNumber;
+                    int patternBase;
+                    if (spriteHeight == 16)
+                    {
+                        patternBase = (tile & 1) * 0x1000;
+                        tileNumber = (tile & 0xFE) + (row >= 8 ? 1 : 0);
+                    }
+                    else
+                    {
+                        patternBase = (ppuControl & 0x08) != 0 ? 0x1000 : 0;
+                        tileNumber = tile;
+                    }
+                    int pattern = patternBase + tileNumber * 16 + (row & 7);
                     int bit = 7 - column;
-                    int color = ((ReadPpuMemory((ushort)(pattern + row)) >> bit) & 1)
-                        | (((ReadPpuMemory((ushort)(pattern + row + 8)) >> bit) & 1) << 1);
+                    int color = ((ReadPpuMemory((ushort)pattern) >> bit) & 1)
+                        | (((ReadPpuMemory((ushort)(pattern + 8)) >> bit) & 1) << 1);
                     if (color == 0) continue;
 
                     if (sprite == 0 && backgroundPixels[frameIndex] != 0 && x < 255
