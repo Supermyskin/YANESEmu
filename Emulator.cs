@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 
 public partial class Emulator
 {
@@ -52,9 +53,9 @@ public partial class Emulator
         }
     }
 
-    public void Run()
+    public void Run(CancellationToken cancellationToken = default)
     {
-        while (!CPU_Halted) Step();
+        while (!CPU_Halted && !cancellationToken.IsCancellationRequested) Step();
     }
 
     public uint[] GetFrameBuffer() => CopyFrameBuffer();

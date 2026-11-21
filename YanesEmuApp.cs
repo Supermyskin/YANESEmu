@@ -5,6 +5,8 @@ using Avalonia.Themes.Fluent;
 
 public sealed class YanesEmuApp : Application
 {
+    public static bool TraceEnabled { get; set; }
+
     public override void Initialize()
     {
         Name = "YANESEmu";

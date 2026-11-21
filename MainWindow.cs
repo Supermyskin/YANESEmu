@@ -18,6 +18,7 @@ internal sealed class MainWindow : Window
     private const int FrameWidth = 256;
     private const int FrameHeight = 240;
     private readonly Emulator emulator = new();
+    private readonly SemaphoreSlim commandGate = new(1, 1);
     private readonly WriteableBitmap bitmap = new(
         new PixelSize(FrameWidth, FrameHeight), new Vector(96, 96),
         PixelFormat.Bgra8888, AlphaFormat.Opaque);
@@ -29,11 +30,14 @@ internal sealed class MainWindow : Window
     private NativeMenuItem? nativePauseItem;
     private MenuItem? windowPauseItem;
     private Task? runTask;
+    private TaskCompletionSource pauseAcknowledged = NewCompletionSource();
+    private TaskCompletionSource resumeSignal = NewCompletionSource();
     private volatile bool isRunning;
     private volatile bool isPaused;
     private volatile bool hasDiagnostic;
     private bool closePending;
     private bool allowClose;
+    private bool shutdownRequested;
 
     public MainWindow()
     {
@@ -94,6 +98,8 @@ internal sealed class MainWindow : Window
             hasDiagnostic = true;
             Dispatcher.UIThread.Post(() => SetStatus(message, isError: true));
         };
+        if (YanesEmuApp.TraceEnabled)
+            emulator.InstructionExecuted += CpuTraceLogger.Write;
         frameTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         frameTimer.Tick += (_, _) => UpdateFrame();
         frameTimer.Start();
@@ -112,13 +118,19 @@ internal sealed class MainWindow : Window
         MenuItem reset = new() { Header = "Reset", InputGesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.R, Avalonia.Input.KeyModifiers.Meta) };
         reset.Click += async (_, _) => await ResetRomAsync();
         windowPauseItem = new MenuItem { Header = "Pause" };
-        windowPauseItem.Click += (_, _) => TogglePause();
+        windowPauseItem.Click += async (_, _) => await TogglePauseAsync();
+        MenuItem step = new() { Header = "Step Instruction" };
+        step.Click += async (_, _) => await StepInstructionAsync();
+        MenuItem stop = new() { Header = "Stop" };
+        stop.Click += async (_, _) => await StopFromMenuAsync();
         MenuItem quit = new() { Header = "Quit" };
         quit.Click += (_, _) => Close();
         MenuItem fileMenu = new() { Header = "File" };
         fileMenu.Items.Add(open);
         fileMenu.Items.Add(reset);
         fileMenu.Items.Add(windowPauseItem);
+        fileMenu.Items.Add(step);
+        fileMenu.Items.Add(stop);
         fileMenu.Items.Add(new Separator());
         fileMenu.Items.Add(quit);
         Menu menu = new();
@@ -142,10 +154,16 @@ internal sealed class MainWindow : Window
         };
         reset.Click += async (_, _) => await ResetRomAsync();
         nativePauseItem = new NativeMenuItem { Header = "Pause" };
-        nativePauseItem.Click += (_, _) => TogglePause();
+        nativePauseItem.Click += async (_, _) => await TogglePauseAsync();
+        NativeMenuItem step = new() { Header = "Step Instruction" };
+        step.Click += async (_, _) => await StepInstructionAsync();
+        NativeMenuItem stop = new() { Header = "Stop" };
+        stop.Click += async (_, _) => await StopFromMenuAsync();
         fileItems.Items.Add(open);
         fileItems.Items.Add(reset);
         fileItems.Items.Add(nativePauseItem);
+        fileItems.Items.Add(step);
+        fileItems.Items.Add(stop);
         NativeMenu menu = new();
         menu.Items.Add(new NativeMenuItem { Header = "File", Menu = fileItems });
         return menu;
@@ -170,35 +188,46 @@ internal sealed class MainWindow : Window
             SetStatus("Could not access the selected ROM file on this device.", isError: true);
             return;
         }
+        if (shutdownRequested) return;
         await LoadRomAsync(path);
     }
 
     private async Task LoadRomAsync(string path)
     {
-        await StopEmulationAsync();
-        currentRomPath = null;
-        hasDiagnostic = false;
+        await commandGate.WaitAsync();
         try
         {
-            if (!emulator.Reset(path))
+            if (shutdownRequested) return;
+            await StopEmulationAsync();
+            if (shutdownRequested) return;
+            currentRomPath = null;
+            hasDiagnostic = false;
+            try
+            {
+                if (!emulator.Reset(path))
+                {
+                    Title = "YANESEmu";
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or ArgumentException or NotSupportedException)
             {
                 Title = "YANESEmu";
+                SetStatus($"Could not open ROM: {ex.Message}", isError: true);
                 return;
             }
+
+            currentRomPath = path;
+            Title = $"YANESEmu — {Path.GetFileName(path)}";
+            isPaused = false;
+            SetPauseMenuHeader("Pause");
+            SetStatus($"Loaded {Path.GetFileName(path)}. Choose File → Pause to pause emulation.");
+            StartEmulation();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or ArgumentException or NotSupportedException)
+        finally
         {
-            Title = "YANESEmu";
-            SetStatus($"Could not open ROM: {ex.Message}", isError: true);
-            return;
+            commandGate.Release();
         }
-        currentRomPath = path;
-        Title = $"YANESEmu — {Path.GetFileName(path)}";
-        isPaused = false;
-        if (nativePauseItem is not null) nativePauseItem.Header = "Pause";
-        if (windowPauseItem is not null) windowPauseItem.Header = "Pause";
-        SetStatus($"Loaded {Path.GetFileName(path)}. Choose File → Pause to pause emulation.");
-        StartEmulation();
     }
 
     private async Task ResetRomAsync()
@@ -209,6 +238,9 @@ internal sealed class MainWindow : Window
     private async Task StopEmulationAsync()
     {
         isRunning = false;
+        isPaused = false;
+        resumeSignal.TrySetResult();
+        pauseAcknowledged.TrySetResult();
         if (runTask is not null)
         {
             await runTask;
@@ -219,13 +251,22 @@ internal sealed class MainWindow : Window
     private void StartEmulation()
     {
         isRunning = true;
-        runTask = Task.Run(async () =>
+        isPaused = false;
+        pauseAcknowledged = NewCompletionSource();
+        resumeSignal = NewCompletionSource();
+        runTask = Task.Run(RunEmulationAsync);
+    }
+
+    private async Task RunEmulationAsync()
+    {
+        try
         {
             while (isRunning && !emulator.CPU_Halted)
             {
                 if (isPaused)
                 {
-                    await Task.Delay(10);
+                    pauseAcknowledged.TrySetResult();
+                    await resumeSignal.Task;
                     continue;
                 }
 
@@ -233,21 +274,113 @@ internal sealed class MainWindow : Window
                     emulator.Step();
                 await Task.Yield();
             }
+        }
+        catch (Exception ex)
+        {
+            hasDiagnostic = true;
+            Dispatcher.UIThread.Post(() => SetStatus($"Emulation error: {ex.Message}", isError: true));
+        }
+        finally
+        {
+            isRunning = false;
+            pauseAcknowledged.TrySetResult();
+        }
 
-            if (emulator.CPU_Halted && !hasDiagnostic)
-                Dispatcher.UIThread.Post(() => SetStatus($"CPU halted at 0x{emulator.ProgramCounter:X4}.", isError: true));
-        });
+        if (emulator.CPU_Halted && !hasDiagnostic)
+            Dispatcher.UIThread.Post(() =>
+            {
+                SetPauseMenuHeader("Pause");
+                SetStatus($"CPU halted at 0x{emulator.ProgramCounter:X4}. Use Reset to start again.", isError: true);
+            });
     }
 
-    private void TogglePause()
+    private async Task TogglePauseAsync()
     {
-        if (currentRomPath is null) return;
-        isPaused = !isPaused;
-        string header = isPaused ? "Resume" : "Pause";
+        await commandGate.WaitAsync();
+        try
+        {
+            if (shutdownRequested || currentRomPath is null || !isRunning) return;
+            if (isPaused)
+            {
+                TaskCompletionSource previousResume = resumeSignal;
+                resumeSignal = NewCompletionSource();
+                isPaused = false;
+                pauseAcknowledged.TrySetResult();
+                previousResume.TrySetResult();
+                SetPauseMenuHeader("Pause");
+                SetStatus($"Running {Path.GetFileName(currentRomPath)}.");
+                return;
+            }
+
+            pauseAcknowledged = NewCompletionSource();
+            isPaused = true;
+            SetPauseMenuHeader("Resume");
+            await pauseAcknowledged.Task;
+            if (!isRunning || !isPaused) return;
+            SetStatus("Paused.");
+        }
+        finally { commandGate.Release(); }
+    }
+
+    private async Task StepInstructionAsync()
+    {
+        await commandGate.WaitAsync();
+        try
+        {
+            if (shutdownRequested || currentRomPath is null || emulator.CPU_Halted) return;
+            if (isRunning && !isPaused)
+            {
+                SetStatus("Pause emulation before stepping one instruction.");
+                return;
+            }
+            if (isRunning)
+                await pauseAcknowledged.Task;
+            else if (runTask is not null)
+            {
+                await runTask;
+                runTask = null;
+            }
+            if (isRunning && !isPaused) return;
+
+            await Task.Run(emulator.Step);
+            UpdateFrame();
+            if (emulator.CPU_Halted)
+            {
+                await StopEmulationAsync();
+                SetPauseMenuHeader("Pause");
+                if (!hasDiagnostic)
+                    SetStatus($"CPU halted at 0x{emulator.ProgramCounter:X4}.", isError: true);
+            }
+            else
+            {
+                string state = isRunning ? "paused" : "stopped";
+                SetStatus($"Stepped one instruction. PC: 0x{emulator.ProgramCounter:X4}. Emulation remains {state}.");
+            }
+        }
+        finally { commandGate.Release(); }
+    }
+
+    private async Task StopFromMenuAsync()
+    {
+        await commandGate.WaitAsync();
+        try
+        {
+            if (shutdownRequested || currentRomPath is null || !isRunning) return;
+            await StopEmulationAsync();
+            SetPauseMenuHeader("Pause");
+            SetStatus($"Stopped by user at PC 0x{emulator.ProgramCounter:X4}. Use Reset to run again.");
+        }
+        finally { commandGate.Release(); }
+    }
+
+    private void SetPauseMenuHeader(string header)
+    {
         if (nativePauseItem is not null) nativePauseItem.Header = header;
         if (windowPauseItem is not null) windowPauseItem.Header = header;
-        SetStatus(isPaused ? "Paused." : $"Running {Path.GetFileName(currentRomPath)}.");
     }
+
+    private static TaskCompletionSource NewCompletionSource() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private async void HandleClosing(object? sender, CancelEventArgs e)
     {
@@ -255,7 +388,10 @@ internal sealed class MainWindow : Window
         e.Cancel = true;
         if (closePending) return;
         closePending = true;
-        await StopEmulationAsync();
+        shutdownRequested = true;
+        await commandGate.WaitAsync();
+        try { await StopEmulationAsync(); }
+        finally { commandGate.Release(); }
         allowClose = true;
         Close();
     }

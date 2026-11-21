@@ -19,6 +19,14 @@ dotnet run
 
 On macOS, **About** and **File** appear in the system menu bar; **File** provides ROM opening, reset, and pause/resume. macOS supplies its standard Quit command in the application menu. On Windows and Linux, the same controls appear in the window menu. **⌘O** opens a ROM and **⌘R** resets it on macOS. The window scales the 256×240 framebuffer with nearest-neighbor filtering. ROM loading errors are shown in red in the status area. Closing the window waits for the emulation worker to stop before the app exits.
 
+The File menu also includes **Step Instruction** (pause first) and **Stop**. Reset waits for the current CPU worker to stop before reinitializing the machine. A deliberate Stop preserves the current machine state; use Reset to restart the ROM.
+
+To print a CPU instruction trace to the terminal while using the window, start the app with `--trace`, then open a ROM:
+
+```sh
+dotnet run -- --trace
+```
+
 The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks and zero or one 8 KiB CHR bank. CHR RAM is used when the ROM has no CHR bank. Other mappers and NES 2.0 images are rejected with a diagnostic. No ROM is included in this repository.
 
 ## Current features
@@ -31,6 +39,8 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - NROM PRG mapped at `$8000–$FFFF`, including 16 KiB bank mirroring.
 - Reset vector loading and basic NMI entry.
 - CPU runs on a background task so the desktop window remains responsive; closing waits for that task to stop.
+- Pause waits for the current instruction batch to reach a safe boundary; single-step runs one instruction while paused or stopped.
+- The core run loop accepts a cancellation token so callers can stop continuous execution.
 - ROM diagnostics and file access errors are shown in red in the app status area.
 
 The CPU is incomplete. Encountering an unsupported opcode stops execution and reports the address. Cycle timing is approximate and is not yet validated against a full 6502 test suite. The UI shell does not make unsupported games compatible.
@@ -53,9 +63,9 @@ Sprites, APU audio, controller input, full scrolling/timing accuracy, and accura
 - `Ppu.cs`: PPU registers, memory, timing, and background rendering.
 - `Cartridge.cs`: iNES NROM loading and reset initialization.
 - `Program.cs`, `YanesEmuApp.cs`, `MainWindow.cs`: Avalonia startup, desktop window, ROM controls, and framebuffer display.
-- `TraceLogger.cs`: instruction trace formatting utility (not currently enabled in the desktop app).
+- `TraceLogger.cs`: optional instruction trace formatting, enabled with `--trace`.
 - `FramePresenter.cs`: legacy terminal display and BMP output utilities (not used by the desktop app).
-- `tests/YANESEmu.Tests`: dependency-free automated core checks.
+- `tests/YANESEmu.Tests`: automated core checks.
 
 The emulator publishes instruction, frame, and diagnostic events. The desktop app subscribes to diagnostics and displays them in the window; the emulator core does not write directly to the console.
 
@@ -66,7 +76,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations, RAM mirroring, PPU buffered reads and palette mirrors, vblank NMI, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations and cancellable run-loop behavior, RAM mirroring, PPU buffered reads and palette mirrors, vblank NMI, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 

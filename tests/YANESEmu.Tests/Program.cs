@@ -1,7 +1,9 @@
 using System;
 using System.IO;
+using System.Threading;
 
 Run("CPU executes immediate load and transfer", CpuExecutesLoadAndTransfer);
+Run("CPU run loop honors cancellation after the current instruction", CpuRunStopsOnCancellation);
 Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
@@ -27,6 +29,15 @@ static void CpuExecutesLoadAndTransfer()
     Equal((byte)0x80, emulator.X, "TAX result");
     emulator.Step();
     True(emulator.CPU_Halted, "HLT state");
+}
+
+static void CpuRunStopsOnCancellation()
+{
+    Emulator emulator = NewEmulator(0xEA, 0xEA);
+    using CancellationTokenSource cancellation = new();
+    emulator.InstructionExecuted += (_, _, _) => cancellation.Cancel();
+    emulator.Run(cancellation.Token);
+    Equal((ushort)0x8001, emulator.ProgramCounter, "PC after cancellation between instructions");
 }
 
 static void CpuRamMirrors()
