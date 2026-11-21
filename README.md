@@ -51,10 +51,11 @@ The core matches the nestest CPU reference log. Timing advances per instruction,
 - VRAM address and scroll write latches, buffered `$2007` reads, and configurable VRAM increment.
 - CHR ROM/RAM, two-screen nametable RAM with horizontal or vertical NROM mirroring, and palette RAM mirrors.
 - PPU cycle advancement at three dots per CPU cycle, basic vblank status, and NMI request.
-- Basic 256×240 background rendering from nametable, attribute, pattern, and palette data.
+- 256×240 background rendering from nametable, attribute, pattern, palette, and scroll data.
+- 8×8 and 8×16 OAM sprites with transparency, flips, palettes, background priority, sprite-zero hit, and the eight-sprites-per-scanline limit.
 - 256×240 framebuffer displayed in the Avalonia desktop window.
 
-Sprites, APU audio, controller input, full scrolling/timing accuracy, and accurate PPU timing are not implemented yet. The window currently displays the existing basic background renderer output.
+APU audio, controller input, mapper support beyond NROM, and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
 
 ## Project layout
 
@@ -76,7 +77,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common undocumented-opcode behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. To compare the complete CPU trace against nestest, download `nestest.nes` and `nestest.log` from the [NES test ROM collection](https://github.com/christopherpow/nes-test-roms/tree/master/other), set `YANESEMU_NESTEST_ROM` and `YANESEMU_NESTEST_LOG` to their paths, and run the test project. The ROM is not included. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common undocumented-opcode behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, 8×8/8×16 sprite rendering, sprite-zero hit and overflow, NROM and CHR RAM loading, and the core's frame and diagnostic events. To compare the complete CPU trace against nestest, download `nestest.nes` and `nestest.log` from the [NES test ROM collection](https://github.com/christopherpow/nes-test-roms/tree/master/other), set `YANESEMU_NESTEST_ROM` and `YANESEMU_NESTEST_LOG` to their paths, and run the test project. The ROM is not included. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 
