@@ -9,6 +9,10 @@ Run("ADC indirect-indexed timing adds a page-cross cycle", AdcIndirectYPageCross
 Run("indexed reads account for page crossings", IndexedReadPageCrossTiming);
 Run("conditional branches account for taken and page-cross cycles", BranchCycleTiming);
 Run("common unofficial NOPs preserve state and use correct instruction lengths", CommonUnofficialNops);
+Run("ADC and SBC set binary result flags", CpuArithmeticFlags);
+Run("BIT and compare instructions set their documented flags", CpuBitAndCompareFlags);
+Run("zero-page indexed indirect modes wrap addresses", CpuZeroPageAddressWrapping);
+Run("subroutine and interrupt returns restore the correct PC", CpuControlFlowReturns);
 Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
@@ -241,6 +245,126 @@ static void CommonUnofficialNops()
     Equal(2, kil.Step(), "KIL cycles");
     True(kil.CPU_Halted, "KIL halts the processor");
     True(diagnostic?.Contains("KIL opcode 0x12", StringComparison.Ordinal) == true, "KIL diagnostic");
+}
+
+static void CpuArithmeticFlags()
+{
+    Emulator adcOverflow = NewEmulator(0x69, 0x50);
+    adcOverflow.A = 0x50;
+    Equal(2, adcOverflow.Step(), "ADC immediate cycles");
+    Equal((byte)0xA0, adcOverflow.A, "ADC overflow result");
+    True(adcOverflow.flag_Overflow && adcOverflow.flag_Negative && !adcOverflow.flag_Carry,
+        "ADC signed overflow flags");
+
+    Emulator adcCarry = NewEmulator(0x69, 0x00);
+    adcCarry.A = 0xFF;
+    adcCarry.flag_Carry = true;
+    adcCarry.flag_Decimal = true;
+    adcCarry.Step();
+    Equal((byte)0x00, adcCarry.A, "NES ADC ignores decimal mode");
+    True(adcCarry.flag_Carry && adcCarry.flag_Zero && !adcCarry.flag_Overflow,
+        "ADC carry and zero flags");
+
+    Emulator sbcOverflow = NewEmulator(0xE9, 0x01);
+    sbcOverflow.A = 0x80;
+    sbcOverflow.flag_Carry = true;
+    sbcOverflow.Step();
+    Equal((byte)0x7F, sbcOverflow.A, "SBC result");
+    True(sbcOverflow.flag_Carry && sbcOverflow.flag_Overflow && !sbcOverflow.flag_Negative,
+        "SBC no-borrow and overflow flags");
+
+    Emulator sbcBorrow = NewEmulator(0xE9, 0x01);
+    sbcBorrow.A = 0;
+    sbcBorrow.flag_Carry = true;
+    sbcBorrow.Step();
+    Equal((byte)0xFF, sbcBorrow.A, "SBC borrow result");
+    True(!sbcBorrow.flag_Carry && sbcBorrow.flag_Negative,
+        "SBC borrow and negative flags");
+}
+
+static void CpuBitAndCompareFlags()
+{
+    Emulator bit = NewEmulator(0x24, 0x10);
+    bit.A = 0x40;
+    bit.RAM[0x10] = 0xC0;
+    bit.flag_Carry = true;
+    bit.Step();
+    True(!bit.flag_Zero && bit.flag_Negative && bit.flag_Overflow && bit.flag_Carry,
+        "BIT copies N/V, computes Z, and preserves C");
+
+    Emulator cmpEqual = NewEmulator(0xC9, 0x7F);
+    cmpEqual.A = 0x7F;
+    cmpEqual.Step();
+    True(cmpEqual.flag_Carry && cmpEqual.flag_Zero && !cmpEqual.flag_Negative,
+        "CMP equal flags");
+
+    Emulator cmpLess = NewEmulator(0xE0, 0x01);
+    cmpLess.X = 0;
+    cmpLess.Step();
+    True(!cmpLess.flag_Carry && !cmpLess.flag_Zero && cmpLess.flag_Negative,
+        "CPX lower-than flags");
+
+    Emulator cpyGreater = NewEmulator(0xC4, 0x01);
+    cpyGreater.Y = 2;
+    cpyGreater.RAM[1] = 1;
+    cpyGreater.Step();
+    True(cpyGreater.flag_Carry && !cpyGreater.flag_Zero && !cpyGreater.flag_Negative,
+        "CPY greater-than flags");
+}
+
+static void CpuZeroPageAddressWrapping()
+{
+    Emulator indexed = NewEmulator(0xB4, 0xFF); // LDY $FF,X
+    indexed.X = 1;
+    indexed.RAM[0] = 0x80;
+    Equal(4, indexed.Step(), "zero-page indexed load cycles");
+    Equal((byte)0x80, indexed.Y, "zero-page indexed address wraps");
+
+    Emulator indirectX = NewEmulator(0xA1, 0xFF); // LDA ($FF,X)
+    indirectX.X = 1;
+    indirectX.RAM[0] = 0x34;
+    indirectX.RAM[1] = 0x12;
+    indirectX.RAM[0x234] = 0xA9;
+    Equal(6, indirectX.Step(), "indirect,X cycles");
+    Equal((byte)0xA9, indirectX.A, "indirect,X pointer wraps in zero page");
+
+    Emulator indirectY = NewEmulator(0xB1, 0xFF); // LDA ($FF),Y
+    indirectY.Y = 1;
+    indirectY.RAM[0xFF] = 0xFF;
+    indirectY.RAM[0] = 0x00;
+    indirectY.RAM[0x100] = 0x7F;
+    Equal(6, indirectY.Step(), "indirect,Y page-cross cycles");
+    Equal((byte)0x7F, indirectY.A, "indirect,Y pointer wraps in zero page");
+}
+
+static void CpuControlFlowReturns()
+{
+    Emulator subroutine = NewEmulator(0x20, 0x00, 0x90);
+    subroutine.stackPointer = 0xFD;
+    Equal(6, subroutine.Step(), "JSR cycles");
+    Equal((ushort)0x9000, subroutine.ProgramCounter, "JSR target");
+    Equal((byte)0x80, subroutine.Read(0x01FD), "JSR stacked PC high");
+    Equal((byte)0x02, subroutine.Read(0x01FC), "JSR stacked return address");
+    subroutine.ROM[0x1000] = 0x60;
+    Equal(6, subroutine.Step(), "RTS cycles");
+    Equal((ushort)0x8003, subroutine.ProgramCounter, "RTS resumes after JSR operands");
+
+    Emulator indirectJump = NewEmulator(0x6C, 0xFF, 0x00);
+    indirectJump.RAM[0xFF] = 0x34;
+    indirectJump.RAM[0x00] = 0x12;
+    indirectJump.RAM[0x100] = 0x56;
+    Equal(5, indirectJump.Step(), "indirect JMP cycles");
+    Equal((ushort)0x1234, indirectJump.ProgramCounter, "indirect JMP page-boundary hardware wrap");
+
+    Emulator rti = NewEmulator(0x40);
+    rti.stackPointer = 0xFA;
+    rti.RAM[0x1FB] = 0xCB;
+    rti.RAM[0x1FC] = 0x34;
+    rti.RAM[0x1FD] = 0x12;
+    Equal(6, rti.Step(), "RTI cycles");
+    Equal((ushort)0x1234, rti.ProgramCounter, "RTI restored PC");
+    True(rti.flag_Carry && rti.flag_Zero && rti.flag_Decimal && rti.flag_Overflow && rti.flag_Negative,
+        "RTI restored processor flags");
 }
 
 static void CpuRamMirrors()
