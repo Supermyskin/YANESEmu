@@ -10,6 +10,7 @@ public partial class Emulator
     public bool futureCarry;
     public long TotalCycles = 7;
     private bool pageCrossed;
+    private readonly NesApu apu = new();
     public bool CPU_Halted;
     public bool IRQRequested { get; private set; }
     public bool flag_Carry, flag_Zero, flag_InterruptDisable, flag_Decimal, flag_Overflow, flag_Negative;
@@ -18,11 +19,14 @@ public partial class Emulator
     public event Action<string>? Diagnostic;
 
     public void SetIRQLine(bool asserted) => IRQRequested = asserted;
+    public AudioSampleBuffer AudioSamples => apu.Output;
 
     public byte Read(ushort addr)
     {
         if (addr is 0x4016 or 0x4017)
             return ReadController(addr - 0x4016);
+        if (addr == 0x4015)
+            return apu.ReadStatus();
         if (addr < 0x2000)
         {
             return RAM[addr % 0x800];
@@ -51,6 +55,10 @@ public partial class Emulator
         if (addr == 0x4016)
         {
             WriteControllerStrobe(value);
+        }
+        else if (addr is >= 0x4000 and <= 0x4017)
+        {
+            apu.WriteRegister(addr, value);
         }
         else if (addr < 0x2000)
         {

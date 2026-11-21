@@ -102,6 +102,7 @@ public partial class Emulator
 
         Array.Clear(RAM, 0, RAM.Length);
         ResetControllers();
+        apu.Reset();
 
         byte pcLow = Read(0xFFFC);
         byte pcHigh = Read(0xFFFD);

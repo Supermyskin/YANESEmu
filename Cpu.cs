@@ -334,6 +334,7 @@ public partial class Emulator
     private int FinishStep(int cycles)
     {
         TotalCycles += cycles;
+        apu.Clock(cycles);
         ClockPpu(cycles * 3);
         return cycles;
     }

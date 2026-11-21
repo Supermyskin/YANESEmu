@@ -61,7 +61,7 @@ The core matches the nestest CPU reference log. Timing advances per instruction,
 - Default bindings are Z/X for A/B, Right Shift for Select, Enter for Start, and the arrow keys for directions.
 - Choose **Controls → Configure Controller…** to change bindings. Settings are saved in the user's application-data folder and restored at startup.
 
-APU audio, mapper support beyond NROM, and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
+Mapper support beyond NROM and cycle-accurate PPU fetch/evaluation timing are not implemented. Background and sprite rendering currently produce visible game graphics, but timing-sensitive games may render incorrectly or fail to run.
 
 ## Project layout
 
