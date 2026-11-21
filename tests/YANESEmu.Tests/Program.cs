@@ -6,6 +6,8 @@ Run("CPU executes immediate load and transfer", CpuExecutesLoadAndTransfer);
 Run("CPU run loop honors cancellation after the current instruction", CpuRunStopsOnCancellation);
 Run("CPU recognizes every official NMOS 6502 opcode", CpuRecognizesOfficialOpcodes);
 Run("ADC indirect-indexed timing adds a page-cross cycle", AdcIndirectYPageCrossTiming);
+Run("indexed reads account for page crossings", IndexedReadPageCrossTiming);
+Run("conditional branches account for taken and page-cross cycles", BranchCycleTiming);
 Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
@@ -91,6 +93,80 @@ static int RunAdcIndirectY(ushort baseAddress)
     emulator.Y = 1;
     emulator.RAM[0x20] = (byte)baseAddress;
     emulator.RAM[0x21] = (byte)(baseAddress >> 8);
+    return emulator.Step();
+}
+
+static void IndexedReadPageCrossTiming()
+{
+    (byte Opcode, int Mode, int BaseCycles)[] cases =
+    {
+        (0xBD, 0, 4), (0xB9, 1, 4), (0xBE, 1, 4), (0xBC, 0, 4),
+        (0x7D, 0, 4), (0x79, 1, 4), (0x71, 2, 5),
+        (0xFD, 0, 4), (0xF9, 1, 4), (0xF1, 2, 5),
+        (0x3D, 0, 4), (0x39, 1, 4), (0x31, 2, 5),
+        (0x1D, 0, 4), (0x19, 1, 4), (0x11, 2, 5),
+        (0x5D, 0, 4), (0x59, 1, 4), (0x51, 2, 5),
+        (0xDD, 0, 4), (0xD9, 1, 4), (0xD1, 2, 5)
+    };
+
+    foreach ((byte opcode, int mode, int baseCycles) in cases)
+    {
+        Equal(baseCycles, ExecuteIndexedRead(opcode, mode, 0x00FE), $"{opcode:X2} same-page cycles");
+        Equal(baseCycles + 1, ExecuteIndexedRead(opcode, mode, 0x00FF), $"{opcode:X2} page-cross cycles");
+    }
+}
+
+static int ExecuteIndexedRead(byte opcode, int mode, ushort baseAddress)
+{
+    Emulator emulator = mode == 2 ? NewEmulator(opcode, 0x20) : NewEmulator(opcode, 0x00, 0x00);
+    emulator.X = 1;
+    emulator.Y = 1;
+    if (mode == 2)
+    {
+        emulator.RAM[0x20] = (byte)baseAddress;
+        emulator.RAM[0x21] = (byte)(baseAddress >> 8);
+    }
+    else
+    {
+        emulator.ROM[1] = (byte)baseAddress;
+        emulator.ROM[2] = (byte)(baseAddress >> 8);
+    }
+    return emulator.Step();
+}
+
+static void BranchCycleTiming()
+{
+    byte[] branches = { 0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0 };
+    foreach (byte opcode in branches)
+    {
+        Equal(2, ExecuteBranch(opcode, take: false, pc: 0x8000, offset: 1), $"{opcode:X2} not-taken cycles");
+        Equal(3, ExecuteBranch(opcode, take: true, pc: 0x8000, offset: 1), $"{opcode:X2} same-page cycles");
+        Equal(4, ExecuteBranch(opcode, take: true, pc: 0x80FD, offset: 1), $"{opcode:X2} forward page-cross cycles");
+        Equal(4, ExecuteBranch(opcode, take: true, pc: 0x8100, offset: 0xFC), $"{opcode:X2} backward page-cross cycles");
+    }
+}
+
+static int ExecuteBranch(byte opcode, bool take, ushort pc, byte offset)
+{
+    Emulator emulator = NewEmulator();
+    emulator.ProgramCounter = pc;
+    emulator.ROM[(pc - 0x8000) % 0x8000] = opcode;
+    emulator.ROM[(pc - 0x8000 + 1) % 0x8000] = offset;
+    emulator.flag_Negative = false;
+    emulator.flag_Overflow = false;
+    emulator.flag_Carry = false;
+    emulator.flag_Zero = false;
+    switch (opcode)
+    {
+        case 0x10: emulator.flag_Negative = !take; break;
+        case 0x30: emulator.flag_Negative = take; break;
+        case 0x50: emulator.flag_Overflow = !take; break;
+        case 0x70: emulator.flag_Overflow = take; break;
+        case 0x90: emulator.flag_Carry = !take; break;
+        case 0xB0: emulator.flag_Carry = take; break;
+        case 0xD0: emulator.flag_Zero = !take; break;
+        case 0xF0: emulator.flag_Zero = take; break;
+    }
     return emulator.Step();
 }
 
