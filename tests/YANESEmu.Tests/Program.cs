@@ -8,6 +8,7 @@ Run("CPU recognizes every official NMOS 6502 opcode", CpuRecognizesOfficialOpcod
 Run("ADC indirect-indexed timing adds a page-cross cycle", AdcIndirectYPageCrossTiming);
 Run("indexed reads account for page crossings", IndexedReadPageCrossTiming);
 Run("conditional branches account for taken and page-cross cycles", BranchCycleTiming);
+Run("common unofficial NOPs preserve state and use correct instruction lengths", CommonUnofficialNops);
 Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
@@ -170,6 +171,42 @@ static int ExecuteBranch(byte opcode, bool take, ushort pc, byte offset)
     return emulator.Step();
 }
 
+static void CommonUnofficialNops()
+{
+    Emulator immediate = NewEmulator(0x89, 0x55);
+    immediate.A = 0xA5;
+    immediate.flag_Carry = true;
+    Equal(2, immediate.Step(), "immediate NOP cycles");
+    Equal((ushort)0x8002, immediate.ProgramCounter, "immediate NOP length");
+    Equal((byte)0xA5, immediate.A, "immediate NOP preserves A");
+    True(immediate.flag_Carry, "immediate NOP preserves flags");
+
+    Emulator zeroPage = NewEmulator(0x04, 0x10);
+    Equal(3, zeroPage.Step(), "zero-page NOP cycles");
+    Equal((ushort)0x8002, zeroPage.ProgramCounter, "zero-page NOP length");
+
+    Emulator zeroPageX = NewEmulator(0x14, 0xFF);
+    zeroPageX.X = 1;
+    Equal(4, zeroPageX.Step(), "zero-page,X NOP cycles");
+    Equal((ushort)0x8002, zeroPageX.ProgramCounter, "zero-page,X NOP length");
+
+    Emulator absolute = NewEmulator(0x0C, 0x00, 0x10);
+    Equal(4, absolute.Step(), "absolute NOP cycles");
+    Equal((ushort)0x8003, absolute.ProgramCounter, "absolute NOP length");
+
+    Emulator absoluteX = NewEmulator(0x1C, 0xFF, 0x00);
+    absoluteX.X = 1;
+    Equal(5, absoluteX.Step(), "absolute,X NOP page-cross cycles");
+    Equal((ushort)0x8003, absoluteX.ProgramCounter, "absolute,X NOP length");
+
+    Emulator kil = NewEmulator(0x12);
+    string? diagnostic = null;
+    kil.Diagnostic += message => diagnostic = message;
+    Equal(2, kil.Step(), "KIL cycles");
+    True(kil.CPU_Halted, "KIL halts the processor");
+    True(diagnostic?.Contains("KIL opcode 0x12", StringComparison.Ordinal) == true, "KIL diagnostic");
+}
+
 static void CpuRamMirrors()
 {
     Emulator emulator = new();
@@ -313,7 +350,7 @@ static void UnsupportedOpcodesPublishDiagnostics()
     emulator.Diagnostic += message => diagnostic = message;
     emulator.Step();
     True(emulator.CPU_Halted, "unsupported opcode halt");
-    True(diagnostic?.Contains("Unknown opcode 0xFF", StringComparison.Ordinal) == true,
+    True(diagnostic?.Contains("Unsupported opcode ISC (0xFF) at PC: 0x8000", StringComparison.Ordinal) == true,
         "unsupported opcode diagnostic");
 }
 

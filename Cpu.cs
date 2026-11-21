@@ -4,22 +4,22 @@ public partial class Emulator
 {
     private static readonly string[] OpCodeNames =
 	{
-	"BRK","ORA","HLT","SLO","NOP","ORA","ASL","SLO","PHP","ORA","ASL","ANC","NOP","ORA","ASL","SLO",
-	"BPL","ORA","HLT","SLO","NOP","ORA","ASL","SLO","CLC","ORA","NOP","SLO","NOP","ORA","ASL","SLO",
-	"JSR","AND","HLT","RLA","BIT","AND","ROL","RLA","PLP","AND","ROL","ANC","BIT","AND","ROL","RLA",
-	"BMI","AND","HLT","RLA","NOP","AND","ROL","RLA","SEC","AND","NOP","RLA","NOP","AND","ROL","RLA",
-	"RTI","EOR","HLT","SRE","NOP","EOR","LSR","SRE","PHA","EOR","LSR","ALR","JMP","EOR","LSR","SRE",
-	"BVC","EOR","HLT","SRE","NOP","EOR","LSR","SRE","CLI","EOR","NOP","SRE","NOP","EOR","LSR","SRE",
-	"RTS","ADC","HLT","RRA","NOP","ADC","ROR","RRA","PLA","ADC","ROR","ARR","JMP","ADC","ROR","RRA",
-	"BVS","ADC","HLT","RRA","NOP","ADC","ROR","RRA","SEI","ADC","NOP","RRA","NOP","ADC","ROR","RRA",
-	"NOP","STA","NOP","SAX","STY","STA","STX","SAX","DEY","NOP","TXA","ANE","STY","STA","STX","SAX",
-	"BCC","STA","HLT","SHA","STY","STA","STX","SAX","TYA","STA","TXS","SHS","SHY","STA","SHX","SHA",
+	"BRK","ORA","KIL","SLO","NOP","ORA","ASL","SLO","PHP","ORA","ASL","ANC","NOP","ORA","ASL","SLO",
+	"BPL","ORA","KIL","SLO","NOP","ORA","ASL","SLO","CLC","ORA","NOP","SLO","NOP","ORA","ASL","SLO",
+	"JSR","AND","KIL","RLA","BIT","AND","ROL","RLA","PLP","AND","ROL","ANC","BIT","AND","ROL","RLA",
+	"BMI","AND","KIL","RLA","NOP","AND","ROL","RLA","SEC","AND","NOP","RLA","NOP","AND","ROL","RLA",
+	"RTI","EOR","KIL","SRE","NOP","EOR","LSR","SRE","PHA","EOR","LSR","ALR","JMP","EOR","LSR","SRE",
+	"BVC","EOR","KIL","SRE","NOP","EOR","LSR","SRE","CLI","EOR","NOP","SRE","NOP","EOR","LSR","SRE",
+	"RTS","ADC","KIL","RRA","NOP","ADC","ROR","RRA","PLA","ADC","ROR","ARR","JMP","ADC","ROR","RRA",
+	"BVS","ADC","KIL","RRA","NOP","ADC","ROR","RRA","SEI","ADC","NOP","RRA","NOP","ADC","ROR","RRA",
+	"NOP","STA","NOP","SAX","STY","STA","STX","SAX","DEY","NOP","TXA","NOP","STY","STA","STX","SAX",
+	"BCC","STA","KIL","SHA","STY","STA","STX","SAX","TYA","STA","TXS","SHS","SHY","STA","SHX","SHA",
 	"LDY","LDA","LDX","LAX","LDY","LDA","LDX","LAX","TAY","LDA","TAX","LXA","LDY","LDA","LDX","LAX",
-	"BCS","LDA","HLT","LAX","LDY","LDA","LDX","LAX","CLV","LDA","TSX","LAE","LDY","LDA","LDX","LAX",
+	"BCS","LDA","KIL","LAX","LDY","LDA","LDX","LAX","CLV","LDA","TSX","LAE","LDY","LDA","LDX","LAX",
 	"CPY","CMP","NOP","DCP","CPY","CMP","DEC","DCP","INY","CMP","DEX","AXS","CPY","CMP","DEC","DCP",
-	"BNE","CMP","HLT","DCP","NOP","CMP","DEC","DPC","CLD","CMP","NOP","DCP","NOP","CMP","DEC","DCP",
+	"BNE","CMP","KIL","DCP","NOP","CMP","DEC","DCP","CLD","CMP","NOP","DCP","NOP","CMP","DEC","DCP",
 	"CPX","SBC","NOP","ISC","CPX","SBC","INC","ISC","INX","SBC","NOP","SBC","CPX","SBC","INC","ISC",
-	"BEQ","SBC","HLT","ISC","NOP","SBC","INC","ISC","SED","SBC","NOP","ISC","NOP","SBC","INC","ISC",
+	"BEQ","SBC","KIL","ISC","NOP","SBC","INC","ISC","SED","SBC","NOP","ISC","NOP","SBC","INC","ISC",
     };
 
     void Op_LSR(ushort addr, byte input)
@@ -282,8 +282,10 @@ public partial class Emulator
 
         switch (opcode)
         {
-            case 0x02: // HLT
+            case 0x02: case 0x12: case 0x22: case 0x32: case 0x42: case 0x52:
+            case 0x62: case 0x72: case 0x92: case 0xB2: case 0xD2: case 0xF2: // unofficial KIL
                 CPU_Halted = true;
+                Diagnostic?.Invoke($"Unofficial KIL opcode 0x{opcode:X2} halted the CPU at PC: 0x{(ProgramCounter - 1):X4}");
                 return FinishStep(2);
 
             case 0xA0: // LDY Immediate
@@ -674,11 +676,6 @@ public partial class Emulator
                 return FinishStep(4);
 
 
-            case 0x89: // BIT Immediate (65C02 / Extended)
-                ProgramCounter++;
-                return FinishStep(2);
-
-
             case 0x00: // BRK Implied
                 ProgramCounter++; // BRK advances PC by 1 extra byte padding
                 Push((byte)(ProgramCounter >> 8));
@@ -759,20 +756,34 @@ public partial class Emulator
                 }
 
 
-            case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA: case 0xFA:
+            case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0xDA: case 0xFA: // unofficial implied NOP
                 return FinishStep(2);
 
-            case 0x80: case 0x82: case 0xC2: case 0xE2: case 0x04: case 0x44: case 0x64:
+            case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2: // unofficial immediate NOP
                 ProgramCounter++;
                 return FinishStep(2);
 
-            case 0x0C:
-                ProgramCounter += 2;
+            case 0x04: case 0x44: case 0x64: // unofficial zero-page NOP
+            {
+                ushort zpAddress = Read(ProgramCounter++);
+                Read(zpAddress);
+                return FinishStep(3);
+            }
+
+            case 0x14: case 0x34: case 0x54: case 0x74: case 0xD4: case 0xF4: // unofficial zero-page,X NOP
+                ReadOperands_ZeroPageXAddressed();
+                Read(addressBus);
                 return FinishStep(4);
 
-            case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
-                ProgramCounter += 2;
+            case 0x0C: // unofficial absolute NOP
+                ReadOperands_AbsoluteAdressed();
+                Read(addressBus);
                 return FinishStep(4);
+
+            case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC: // unofficial absolute,X NOP
+                ReadOperands_AbsoluteXAddressed();
+                Read(addressBus);
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x40: // RTI Implied
             {
@@ -1140,7 +1151,7 @@ public partial class Emulator
                 }
 
             default:
-                Diagnostic?.Invoke($"Unknown opcode 0x{opcode:X2} at PC: 0x{(ProgramCounter - 1):X4}");
+                Diagnostic?.Invoke($"Unsupported opcode {GetOpcodeName(opcode)} (0x{opcode:X2}) at PC: 0x{(ProgramCounter - 1):X4}");
                 CPU_Halted = true;
                 return FinishStep(2);
         }

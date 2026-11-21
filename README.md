@@ -43,7 +43,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - The core run loop accepts a cancellation token so callers can stop continuous execution.
 - ROM diagnostics and file access errors are shown in red in the app status area.
 
-The CPU is incomplete. Encountering an unsupported opcode stops execution and reports the address. Cycle timing is approximate and is not yet validated against a full 6502 test suite. The UI shell does not make unsupported games compatible.
+Instruction behavior and cycle timing are still being validated. Common unofficial NOP forms are implemented with their operand reads and cycle costs, and unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. The UI shell does not make unsupported games compatible.
 
 ### PPU
 
@@ -76,7 +76,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations, official-opcode dispatch, indexed page-cross timing, branch timing, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations, official-opcode dispatch, indexed page-cross timing, branch timing, common unofficial NOP behavior, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 
