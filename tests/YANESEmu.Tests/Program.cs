@@ -20,6 +20,7 @@ Run("subroutine and interrupt returns restore the correct PC", CpuControlFlowRet
 Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
+Run("PPU renders 8x8 sprites from OAM and CHR", PpuRendersSprites);
 Run("PPU raises NMI at vblank", PpuRaisesNmiAtVblank);
 Run("NMI enters through its vector and pushes hardware status", PpuNmiIsServiced);
 Run("IRQ obeys the interrupt mask and preserves the asserted line", IrqIsMaskedAndServiced);
@@ -478,6 +479,26 @@ static void PpuPaletteEntriesMirror()
     emulator.Write(0x2007, 0x2A);
     SetPpuAddress(emulator, 0x3F00);
     Equal((byte)0x2A, emulator.Read(0x2007), "universal palette mirror");
+}
+
+static void PpuRendersSprites()
+{
+    Emulator emulator = new();
+    SetPpuAddress(emulator, 0x0010);
+    emulator.Write(0x2007, 0xFF); // tile 1, first row, low bit plane
+    SetPpuAddress(emulator, 0x3F11);
+    emulator.Write(0x2007, 0x01);
+    emulator.Write(0x2003, 0);
+    emulator.Write(0x2004, 0);  // top is OAM Y + 1
+    emulator.Write(0x2004, 1);
+    emulator.Write(0x2004, 0);
+    emulator.Write(0x2004, 10);
+    emulator.Write(0x2001, 0x14); // sprites and left-edge sprites enabled
+    emulator.EmulatePPU();
+
+    uint[] frame = emulator.GetFrameBuffer();
+    Equal(0x002A88u, frame[1 * 256 + 10], "opaque sprite pixel");
+    Equal(0u, frame[1 * 256 + 9], "transparent pixel remains backdrop");
 }
 
 static void PpuRaisesNmiAtVblank()

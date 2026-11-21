@@ -186,13 +186,8 @@ public partial class Emulator
 
     private void RenderBackground()
     {
-        if ((ppuMask & 0x08) == 0)
-        {
-            Array.Fill(frameBuffer, GetNesColor(ReadPpuMemory(0x3F00)));
-            PublishFrame();
-            return;
-        }
-
+        byte[] backgroundPixels = new byte[frameBuffer.Length];
+        byte backdrop = ReadPpuMemory(0x3F00);
         int baseNametable = ppuControl & 3;
         int patternBase = (ppuControl & 0x10) != 0 ? 0x1000 : 0;
         for (int y = 0; y < 240; y++)
@@ -203,9 +198,10 @@ public partial class Emulator
             int pixelY = worldY & 7;
             for (int x = 0; x < 256; x++)
             {
-                if (x < 8 && (ppuMask & 0x02) == 0)
+                int pixelIndex = y * 256 + x;
+                if ((ppuMask & 0x08) == 0 || (x < 8 && (ppuMask & 0x02) == 0))
                 {
-                    frameBuffer[y * 256 + x] = GetNesColor(ReadPpuMemory(0x3F00));
+                    frameBuffer[pixelIndex] = GetNesColor(backdrop);
                     continue;
                 }
                 int worldX = (x + scrollX) % 512;
@@ -227,10 +223,57 @@ public partial class Emulator
                     palette = (attribute >> shift) & 3;
                 }
                 byte nesColor = ReadPpuMemory((ushort)(0x3F00 + palette * 4 + colorIndex));
-                frameBuffer[y * 256 + x] = GetNesColor(nesColor);
+                backgroundPixels[pixelIndex] = (byte)colorIndex;
+                frameBuffer[pixelIndex] = GetNesColor(nesColor);
             }
         }
+
+        RenderSprites(backgroundPixels, backdrop);
         PublishFrame();
+    }
+
+    private void RenderSprites(byte[] backgroundPixels, byte backdrop)
+    {
+        if ((ppuMask & 0x10) == 0) return;
+
+        for (int y = 0; y < 240; y++)
+        {
+            for (int x = (ppuMask & 0x04) != 0 ? 0 : 8; x < 256; x++)
+            {
+                int frameIndex = y * 256 + x;
+                for (int sprite = 0; sprite < 64; sprite++)
+                {
+                    int oamIndex = sprite * 4;
+                    int top = oam[oamIndex] + 1;
+                    int left = oam[oamIndex + 3];
+                    int row = y - top;
+                    int column = x - left;
+                    if ((uint)row >= 8 || (uint)column >= 8) continue;
+
+                    byte tile = oam[oamIndex + 1];
+                    byte attributes = oam[oamIndex + 2];
+                    if ((attributes & 0x80) != 0) row = 7 - row;
+                    if ((attributes & 0x40) != 0) column = 7 - column;
+                    int pattern = ((ppuControl & 0x08) != 0 ? 0x1000 : 0) + tile * 16;
+                    int bit = 7 - column;
+                    int color = ((ReadPpuMemory((ushort)(pattern + row)) >> bit) & 1)
+                        | (((ReadPpuMemory((ushort)(pattern + row + 8)) >> bit) & 1) << 1);
+                    if (color == 0) continue;
+
+                    if (sprite == 0 && backgroundPixels[frameIndex] != 0 && x < 255
+                        && (ppuMask & 0x18) == 0x18)
+                        ppuStatus |= 0x40;
+
+                    if ((attributes & 0x20) == 0 || backgroundPixels[frameIndex] == 0)
+                    {
+                        int palette = attributes & 3;
+                        byte nesColor = ReadPpuMemory((ushort)(0x3F10 + palette * 4 + color));
+                        frameBuffer[frameIndex] = GetNesColor(nesColor);
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     private static uint GetNesColor(byte index)
