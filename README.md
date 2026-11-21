@@ -33,7 +33,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 
 ### CPU and bus
 
-- Execution paths for all 151 official NMOS 6502 opcodes, with conformance and timing validation in progress.
+- All 151 official NMOS 6502 opcodes and common stable undocumented instructions. The optional nestest comparison checks the complete CPU reference trace, including register, flag, and instruction-cycle state.
 - CPU RAM at `$0000–$07FF`, mirrored through `$1FFF`.
 - PPU register window at `$2000–$3FFF`, mirrored every eight bytes.
 - NROM PRG mapped at `$8000–$FFFF`, including 16 KiB bank mirroring.
@@ -43,7 +43,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - The core run loop accepts a cancellation token so callers can stop continuous execution.
 - ROM diagnostics and file access errors are shown in red in the app status area.
 
-Instruction behavior and cycle timing are still being validated. Common unofficial NOP forms are implemented with their operand reads and cycle costs, and unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. The UI shell does not make unsupported games compatible.
+The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, SAX, SBC, ANC, ALR, ARR, AXS, SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, APU, input, and mapper support remain incomplete.
 
 ### PPU
 
@@ -76,7 +76,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common unofficial NOP behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common undocumented-opcode behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. To compare the complete CPU trace against nestest, download `nestest.nes` and `nestest.log` from the [NES test ROM collection](https://github.com/christopherpow/nes-test-roms/tree/master/other), set `YANESEMU_NESTEST_ROM` and `YANESEMU_NESTEST_LOG` to their paths, and run the test project. The ROM is not included. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 

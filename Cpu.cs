@@ -12,7 +12,7 @@ public partial class Emulator
 	"BVC","EOR","KIL","SRE","NOP","EOR","LSR","SRE","CLI","EOR","NOP","SRE","NOP","EOR","LSR","SRE",
 	"RTS","ADC","KIL","RRA","NOP","ADC","ROR","RRA","PLA","ADC","ROR","ARR","JMP","ADC","ROR","RRA",
 	"BVS","ADC","KIL","RRA","NOP","ADC","ROR","RRA","SEI","ADC","NOP","RRA","NOP","ADC","ROR","RRA",
-	"NOP","STA","NOP","SAX","STY","STA","STX","SAX","DEY","NOP","TXA","NOP","STY","STA","STX","SAX",
+	"NOP","STA","NOP","SAX","STY","STA","STX","SAX","DEY","NOP","TXA","ANE","STY","STA","STX","SAX",
 	"BCC","STA","KIL","SHA","STY","STA","STX","SAX","TYA","STA","TXS","SHS","SHY","STA","SHX","SHA",
 	"LDY","LDA","LDX","LAX","LDY","LDA","LDX","LAX","TAY","LDA","TAX","LXA","LDY","LDA","LDX","LAX",
 	"BCS","LDA","KIL","LAX","LDY","LDA","LDX","LAX","CLV","LDA","TSX","LAE","LDY","LDA","LDX","LAX",
@@ -211,6 +211,96 @@ public partial class Emulator
         A ^= Input;
         flag_Negative = A >= 0x80;
         flag_Zero = A == 0x00;
+    }
+
+    private void Op_LAX(byte input)
+    {
+        A = X = input;
+        SetZeroNegative(input);
+    }
+
+    private void Op_SAX(ushort address) => Write(address, (byte)(A & X));
+
+    private void Op_SLO(ushort address, byte input)
+    {
+        byte result = (byte)(input << 1);
+        flag_Carry = (input & 0x80) != 0;
+        Write(address, result);
+        A |= result;
+        SetZeroNegative(A);
+    }
+
+    private void Op_RLA(ushort address, byte input)
+    {
+        bool nextCarry = (input & 0x80) != 0;
+        byte result = (byte)((input << 1) | (flag_Carry ? 1 : 0));
+        Write(address, result);
+        flag_Carry = nextCarry;
+        A &= result;
+        SetZeroNegative(A);
+    }
+
+    private void Op_SRE(ushort address, byte input)
+    {
+        flag_Carry = (input & 1) != 0;
+        byte result = (byte)(input >> 1);
+        Write(address, result);
+        A ^= result;
+        SetZeroNegative(A);
+    }
+
+    private void Op_RRA(ushort address, byte input)
+    {
+        bool nextCarry = (input & 1) != 0;
+        byte result = (byte)((input >> 1) | (flag_Carry ? 0x80 : 0));
+        Write(address, result);
+        flag_Carry = nextCarry;
+        Op_ADC(result);
+    }
+
+    private void Op_DCP(ushort address, byte input)
+    {
+        byte result = (byte)(input - 1);
+        Write(address, result);
+        Op_CMP(result);
+    }
+
+    private void Op_ISC(ushort address, byte input)
+    {
+        byte result = (byte)(input + 1);
+        Write(address, result);
+        Op_SBC(result);
+    }
+
+    private void Op_ANC(byte input)
+    {
+        Op_AND(input);
+        flag_Carry = flag_Negative;
+    }
+
+    private void Op_ALR(byte input)
+    {
+        A &= input;
+        flag_Carry = (A & 1) != 0;
+        A >>= 1;
+        SetZeroNegative(A);
+    }
+
+    private void Op_ARR(byte input)
+    {
+        A = (byte)(A & input);
+        A = (byte)((A >> 1) | (flag_Carry ? 0x80 : 0));
+        SetZeroNegative(A);
+        flag_Carry = (A & 0x40) != 0;
+        flag_Overflow = ((A >> 6) & 1) != ((A >> 5) & 1);
+    }
+
+    private void Op_AXS(byte input)
+    {
+        byte masked = (byte)(A & X);
+        flag_Carry = masked >= input;
+        X = (byte)(masked - input);
+        SetZeroNegative(X);
     }
 
     public void Push(byte value)
@@ -637,7 +727,7 @@ public partial class Emulator
                 Op_ADC(Read(addressBus));
                 return FinishStep(4);
 
-            case 0xE9: // SBC Immediate
+            case 0xE9: case 0xEB: // SBC Immediate, including the unofficial duplicate opcode
                 Op_SBC(Read(ProgramCounter++));
                 return FinishStep(2);
 
@@ -830,6 +920,36 @@ public partial class Emulator
                 SetZeroNegative(A);
                 return FinishStep(5 + (pageCrossed ? 1 : 0));
 
+            case 0xA3: // LAX (Indirect,X) unofficial
+                ReadOperands_IndirectXAddressed();
+                Op_LAX(Read(addressBus));
+                return FinishStep(6);
+
+            case 0xA7: // LAX Zero Page unofficial
+                ReadOperands_ZeroPageAddressed();
+                Op_LAX(Read(addressBus));
+                return FinishStep(3);
+
+            case 0xAF: // LAX Absolute unofficial
+                ReadOperands_AbsoluteAdressed();
+                Op_LAX(Read(addressBus));
+                return FinishStep(4);
+
+            case 0xB3: // LAX (Indirect),Y unofficial
+                ReadOperands_IndirectYAddressed();
+                Op_LAX(Read(addressBus));
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
+
+            case 0xB7: // LAX Zero Page,Y unofficial
+                ReadOperands_ZeroPageYAddressed();
+                Op_LAX(Read(addressBus));
+                return FinishStep(4);
+
+            case 0xBF: // LAX Absolute,Y unofficial
+                ReadOperands_AbsoluteYAddressed();
+                Op_LAX(Read(addressBus));
+                return FinishStep(4 + (pageCrossed ? 1 : 0));
+
             case 0xA6: // LDX Zero Page
                 ReadOperands_ZeroPageAddressed();
                 X = Read(addressBus);
@@ -902,6 +1022,26 @@ public partial class Emulator
                 ReadOperands_IndirectYAddressed();
                 Write(addressBus, A);
                 return FinishStep(6);
+
+            case 0x83: // SAX (Indirect,X) unofficial
+                ReadOperands_IndirectXAddressed();
+                Op_SAX(addressBus);
+                return FinishStep(6);
+
+            case 0x87: // SAX Zero Page unofficial
+                ReadOperands_ZeroPageAddressed();
+                Op_SAX(addressBus);
+                return FinishStep(3);
+
+            case 0x8F: // SAX Absolute unofficial
+                ReadOperands_AbsoluteAdressed();
+                Op_SAX(addressBus);
+                return FinishStep(4);
+
+            case 0x97: // SAX Zero Page,Y unofficial
+                ReadOperands_ZeroPageYAddressed();
+                Op_SAX(addressBus);
+                return FinishStep(4);
 
             case 0x96: // STX Zero Page,Y
                 ReadOperands_ZeroPageYAddressed();
@@ -1122,6 +1262,88 @@ public partial class Emulator
                 ReadOperands_AbsoluteXAddressed();
                 Op_ROR(addressBus, Read(addressBus));
                 return FinishStep(7);
+
+            case 0x03: case 0x07: case 0x0F: case 0x13: case 0x17: case 0x1B: case 0x1F: // SLO
+                if (opcode is 0x03) ReadOperands_IndirectXAddressed();
+                else if (opcode is 0x07) ReadOperands_ZeroPageAddressed();
+                else if (opcode is 0x0F) ReadOperands_AbsoluteAdressed();
+                else if (opcode is 0x13) ReadOperands_IndirectYAddressed();
+                else if (opcode is 0x17) ReadOperands_ZeroPageXAddressed();
+                else if (opcode is 0x1B) ReadOperands_AbsoluteYAddressed();
+                else ReadOperands_AbsoluteXAddressed();
+                Op_SLO(addressBus, Read(addressBus));
+                return FinishStep(opcode switch { 0x03 or 0x13 => 8, 0x07 or 0x0F => opcode == 0x07 ? 5 : 6, 0x17 => 6, _ => 7 });
+
+            case 0x23: case 0x27: case 0x2F: case 0x33: case 0x37: case 0x3B: case 0x3F: // RLA
+                if (opcode is 0x23) ReadOperands_IndirectXAddressed();
+                else if (opcode is 0x27) ReadOperands_ZeroPageAddressed();
+                else if (opcode is 0x2F) ReadOperands_AbsoluteAdressed();
+                else if (opcode is 0x33) ReadOperands_IndirectYAddressed();
+                else if (opcode is 0x37) ReadOperands_ZeroPageXAddressed();
+                else if (opcode is 0x3B) ReadOperands_AbsoluteYAddressed();
+                else ReadOperands_AbsoluteXAddressed();
+                Op_RLA(addressBus, Read(addressBus));
+                return FinishStep(opcode switch { 0x23 or 0x33 => 8, 0x27 => 5, 0x2F => 6, 0x37 => 6, _ => 7 });
+
+            case 0x43: case 0x47: case 0x4F: case 0x53: case 0x57: case 0x5B: case 0x5F: // SRE
+                if (opcode is 0x43) ReadOperands_IndirectXAddressed();
+                else if (opcode is 0x47) ReadOperands_ZeroPageAddressed();
+                else if (opcode is 0x4F) ReadOperands_AbsoluteAdressed();
+                else if (opcode is 0x53) ReadOperands_IndirectYAddressed();
+                else if (opcode is 0x57) ReadOperands_ZeroPageXAddressed();
+                else if (opcode is 0x5B) ReadOperands_AbsoluteYAddressed();
+                else ReadOperands_AbsoluteXAddressed();
+                Op_SRE(addressBus, Read(addressBus));
+                return FinishStep(opcode switch { 0x43 or 0x53 => 8, 0x47 => 5, 0x4F => 6, 0x57 => 6, _ => 7 });
+
+            case 0x63: case 0x67: case 0x6F: case 0x73: case 0x77: case 0x7B: case 0x7F: // RRA
+                if (opcode is 0x63) ReadOperands_IndirectXAddressed();
+                else if (opcode is 0x67) ReadOperands_ZeroPageAddressed();
+                else if (opcode is 0x6F) ReadOperands_AbsoluteAdressed();
+                else if (opcode is 0x73) ReadOperands_IndirectYAddressed();
+                else if (opcode is 0x77) ReadOperands_ZeroPageXAddressed();
+                else if (opcode is 0x7B) ReadOperands_AbsoluteYAddressed();
+                else ReadOperands_AbsoluteXAddressed();
+                Op_RRA(addressBus, Read(addressBus));
+                return FinishStep(opcode switch { 0x63 or 0x73 => 8, 0x67 => 5, 0x6F => 6, 0x77 => 6, _ => 7 });
+
+            case 0xC3: case 0xC7: case 0xCF: case 0xD3: case 0xD7: case 0xDB: case 0xDF: // DCP
+                if (opcode is 0xC3) ReadOperands_IndirectXAddressed();
+                else if (opcode is 0xC7) ReadOperands_ZeroPageAddressed();
+                else if (opcode is 0xCF) ReadOperands_AbsoluteAdressed();
+                else if (opcode is 0xD3) ReadOperands_IndirectYAddressed();
+                else if (opcode is 0xD7) ReadOperands_ZeroPageXAddressed();
+                else if (opcode is 0xDB) ReadOperands_AbsoluteYAddressed();
+                else ReadOperands_AbsoluteXAddressed();
+                Op_DCP(addressBus, Read(addressBus));
+                return FinishStep(opcode switch { 0xC3 or 0xD3 => 8, 0xC7 => 5, 0xCF => 6, 0xD7 => 6, _ => 7 });
+
+            case 0xE3: case 0xE7: case 0xEF: case 0xF3: case 0xF7: case 0xFB: case 0xFF: // ISC
+                if (opcode is 0xE3) ReadOperands_IndirectXAddressed();
+                else if (opcode is 0xE7) ReadOperands_ZeroPageAddressed();
+                else if (opcode is 0xEF) ReadOperands_AbsoluteAdressed();
+                else if (opcode is 0xF3) ReadOperands_IndirectYAddressed();
+                else if (opcode is 0xF7) ReadOperands_ZeroPageXAddressed();
+                else if (opcode is 0xFB) ReadOperands_AbsoluteYAddressed();
+                else ReadOperands_AbsoluteXAddressed();
+                Op_ISC(addressBus, Read(addressBus));
+                return FinishStep(opcode switch { 0xE3 or 0xF3 => 8, 0xE7 => 5, 0xEF => 6, 0xF7 => 6, _ => 7 });
+
+            case 0x0B: case 0x2B: // ANC immediate
+                Op_ANC(Read(ProgramCounter++));
+                return FinishStep(2);
+
+            case 0x4B: // ALR immediate
+                Op_ALR(Read(ProgramCounter++));
+                return FinishStep(2);
+
+            case 0x6B: // ARR immediate
+                Op_ARR(Read(ProgramCounter++));
+                return FinishStep(2);
+
+            case 0xCB: // AXS immediate
+                Op_AXS(Read(ProgramCounter++));
+                return FinishStep(2);
 
             // Branch Instuctions
             case 0x10: // BPL

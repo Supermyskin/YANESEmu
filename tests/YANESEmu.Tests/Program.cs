@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 Run("CPU executes immediate load and transfer", CpuExecutesLoadAndTransfer);
@@ -9,6 +11,8 @@ Run("ADC indirect-indexed timing adds a page-cross cycle", AdcIndirectYPageCross
 Run("indexed reads account for page crossings", IndexedReadPageCrossTiming);
 Run("conditional branches account for taken and page-cross cycles", BranchCycleTiming);
 Run("common unofficial NOPs preserve state and use correct instruction lengths", CommonUnofficialNops);
+Run("stable unofficial LAX and SAX operations execute", StableLaxAndSax);
+Run("unofficial immediate SBC alias executes", UnofficialSbcAlias);
 Run("ADC and SBC set binary result flags", CpuArithmeticFlags);
 Run("BIT and compare instructions set their documented flags", CpuBitAndCompareFlags);
 Run("zero-page indexed indirect modes wrap addresses", CpuZeroPageAddressWrapping);
@@ -24,12 +28,64 @@ Run("NROM cartridge loads reset vector and CHR RAM", NromLoads);
 Run("CPU reset preserves the exact reset vector and initializes state", CpuResetState);
 Run("emulator publishes frames without console output", EmulatorPublishesFrames);
 Run("unsupported opcodes publish diagnostics", UnsupportedOpcodesPublishDiagnostics);
+RunOptionalNestest();
 Console.WriteLine("All emulator checks passed.");
 
 static void Run(string name, Action test)
 {
     test();
     Console.WriteLine($"PASS {name}");
+}
+
+static void RunOptionalNestest()
+{
+    string? romPath = Environment.GetEnvironmentVariable("YANESEMU_NESTEST_ROM");
+    string? logPath = Environment.GetEnvironmentVariable("YANESEMU_NESTEST_LOG");
+    if (string.IsNullOrWhiteSpace(romPath) || string.IsNullOrWhiteSpace(logPath))
+    {
+        Console.WriteLine("SKIP nestest reference log (set YANESEMU_NESTEST_ROM and YANESEMU_NESTEST_LOG)");
+        return;
+    }
+
+    Run("nestest matches the CPU reference log", () => NestestMatchesReferenceLog(romPath, logPath));
+}
+
+static void NestestMatchesReferenceLog(string romPath, string logPath)
+{
+    Emulator emulator = new();
+    True(emulator.Reset(romPath), "nestest ROM loads");
+    emulator.ProgramCounter = 0xC000; // nestest's automated CPU-test entry point
+
+    Regex linePattern = new(@"^(?<pc>[0-9A-F]{4})\s+.*\bA:(?<a>[0-9A-F]{2})\s+X:(?<x>[0-9A-F]{2})\s+Y:(?<y>[0-9A-F]{2})\s+P:(?<p>[0-9A-F]{2})\s+SP:(?<sp>[0-9A-F]{2}).*\bCYC:(?<cyc>[0-9]+)", RegexOptions.Compiled);
+    int lineNumber = 0;
+    foreach (string line in File.ReadLines(logPath))
+    {
+        Match match = linePattern.Match(line);
+        if (!match.Success) throw new InvalidOperationException($"nestest log line {lineNumber + 1} could not be parsed");
+        string context = $"nestest line {lineNumber + 1}";
+        Equal(Convert.ToUInt16(match.Groups["pc"].Value, 16), emulator.ProgramCounter, $"{context} PC");
+        Equal(Convert.ToByte(match.Groups["a"].Value, 16), emulator.A, $"{context} A");
+        Equal(Convert.ToByte(match.Groups["x"].Value, 16), emulator.X, $"{context} X");
+        Equal(Convert.ToByte(match.Groups["y"].Value, 16), emulator.Y, $"{context} Y");
+        Equal(Convert.ToByte(match.Groups["p"].Value, 16), CpuStatus(emulator), $"{context} P");
+        Equal(Convert.ToByte(match.Groups["sp"].Value, 16), emulator.stackPointer, $"{context} SP");
+        Equal(long.Parse(match.Groups["cyc"].Value, CultureInfo.InvariantCulture), emulator.TotalCycles, $"{context} cycle");
+        emulator.Step();
+        lineNumber++;
+    }
+    True(lineNumber > 8000, "nestest reference log ran through its CPU cases");
+}
+
+static byte CpuStatus(Emulator emulator)
+{
+    byte status = 0x20;
+    if (emulator.flag_Carry) status |= 0x01;
+    if (emulator.flag_Zero) status |= 0x02;
+    if (emulator.flag_InterruptDisable) status |= 0x04;
+    if (emulator.flag_Decimal) status |= 0x08;
+    if (emulator.flag_Overflow) status |= 0x40;
+    if (emulator.flag_Negative) status |= 0x80;
+    return status;
 }
 
 static void CpuExecutesLoadAndTransfer()
@@ -246,6 +302,34 @@ static void CommonUnofficialNops()
     Equal(2, kil.Step(), "KIL cycles");
     True(kil.CPU_Halted, "KIL halts the processor");
     True(diagnostic?.Contains("KIL opcode 0x12", StringComparison.Ordinal) == true, "KIL diagnostic");
+}
+
+static void StableLaxAndSax()
+{
+    Emulator lax = NewEmulator(0xA7, 0x10);
+    lax.RAM[0x10] = 0x80;
+    Equal(3, lax.Step(), "LAX zero-page cycles");
+    Equal((byte)0x80, lax.A, "LAX loads A");
+    Equal((byte)0x80, lax.X, "LAX loads X");
+    True(lax.flag_Negative && !lax.flag_Zero, "LAX flags");
+
+    Emulator sax = NewEmulator(0x87, 0x20);
+    sax.A = 0xF0;
+    sax.X = 0x3C;
+    sax.flag_Carry = true;
+    Equal(3, sax.Step(), "SAX zero-page cycles");
+    Equal((byte)0x30, sax.RAM[0x20], "SAX stores A AND X");
+    True(sax.flag_Carry, "SAX preserves flags");
+}
+
+static void UnofficialSbcAlias()
+{
+    Emulator emulator = NewEmulator(0xEB, 0x01);
+    emulator.A = 0x02;
+    emulator.flag_Carry = true;
+    Equal(2, emulator.Step(), "unofficial SBC cycles");
+    Equal((byte)0x01, emulator.A, "unofficial SBC result");
+    True(emulator.flag_Carry, "unofficial SBC carry");
 }
 
 static void CpuArithmeticFlags()
@@ -549,12 +633,12 @@ static void EmulatorPublishesFrames()
 
 static void UnsupportedOpcodesPublishDiagnostics()
 {
-    Emulator emulator = NewEmulator(0xFF);
+    Emulator emulator = NewEmulator(0x8B);
     string? diagnostic = null;
     emulator.Diagnostic += message => diagnostic = message;
     emulator.Step();
     True(emulator.CPU_Halted, "unsupported opcode halt");
-    True(diagnostic?.Contains("Unsupported opcode ISC (0xFF) at PC: 0x8000", StringComparison.Ordinal) == true,
+    True(diagnostic?.Contains("Unsupported opcode ANE (0x8B) at PC: 0x8000", StringComparison.Ordinal) == true,
         "unsupported opcode diagnostic");
 }
 
