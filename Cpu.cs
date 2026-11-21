@@ -1024,6 +1024,20 @@ public partial class Emulator
                 Write(addressBus, A);
                 return FinishStep(6);
 
+            case 0x93: // SHA (Indirect),Y (unstable unofficial opcode)
+                byte pointer = Read(ProgramCounter++);
+                byte pointerLow = Read(pointer);
+                byte pointerHigh = Read((ushort)((pointer + 1) & 0xFF));
+                ushort baseAddress = (ushort)((pointerHigh << 8) | pointerLow);
+                ushort effectiveAddress = (ushort)(baseAddress + Y);
+                byte shaValue = (byte)(A & X & ((effectiveAddress >> 8) + 1));
+                // On a page crossing, the unstable store can replace the high address byte.
+                addressBus = (baseAddress & 0xFF00) != (effectiveAddress & 0xFF00)
+                    ? (ushort)((shaValue << 8) | (effectiveAddress & 0x00FF))
+                    : effectiveAddress;
+                Write(addressBus, shaValue);
+                return FinishStep(6);
+
             case 0x83: // SAX (Indirect,X) unofficial
                 ReadOperands_IndirectXAddressed();
                 Op_SAX(addressBus);

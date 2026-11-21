@@ -43,7 +43,7 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - The core run loop accepts a cancellation token so callers can stop continuous execution.
 - ROM diagnostics and file access errors are shown in red in the app status area.
 
-The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, SAX, SBC, ANC, ALR, ARR, AXS, SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, full APU, and mapper support remain incomplete.
+The core matches the nestest CPU reference log. Timing advances per instruction, so bus-level timing details and interrupt sampling subtleties are not covered by that comparison. Common unofficial NOP, LAX, SAX, SBC, ANC, ALR, ARR, AXS, SHA, SLO, RLA, SRE, RRA, DCP, and ISC operations are implemented; SHA is unstable and only approximates hardware page-cross behavior. Unofficial KIL opcodes stop with a diagnostic. Other unsupported opcodes stop execution and report the mnemonic, byte, and address. CPU conformance alone does not guarantee a game will run because PPU, full APU, and mapper support remain incomplete.
 
 ### PPU
 
