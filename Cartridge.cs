@@ -108,11 +108,6 @@ public partial class Emulator
 
         TotalCycles = 7;
 
-        if (ProgramCounter == 0x0000 || ProgramCounter == 0xFFFF)
-        {
-            ProgramCounter = 0x8000;
-        }
-
         int chrPages = fileBytes[5];
         int chrSize = chrPages * 8192;
         int chrOffset = prgOffset + prgSize;

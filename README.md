@@ -76,7 +76,7 @@ dotnet build
 dotnet run --project tests/YANESEmu.Tests
 ```
 
-The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common unofficial NOP behavior, zero-page wrapping, control-flow returns, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
+The test runner checks CPU operations and arithmetic flags, all official opcode dispatch and base cycle counts, indexed page-cross timing, branch timing, common unofficial NOP behavior, zero-page wrapping, control-flow returns, reset registers and exact vectors, cancellable run-loop behavior, IRQ/NMI/BRK vectors and stack status, RAM mirroring, PPU buffered reads and palette mirrors, NROM and CHR RAM loading, and the core's frame and diagnostic events. These are foundation checks, not a complete hardware conformance suite. The desktop app uses Avalonia packages restored during the build.
 
 ## Updating this README
 

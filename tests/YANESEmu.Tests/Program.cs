@@ -21,6 +21,7 @@ Run("NMI enters through its vector and pushes hardware status", PpuNmiIsServiced
 Run("IRQ obeys the interrupt mask and preserves the asserted line", IrqIsMaskedAndServiced);
 Run("BRK pushes the software-interrupt status", BrkPushesBreakStatus);
 Run("NROM cartridge loads reset vector and CHR RAM", NromLoads);
+Run("CPU reset preserves the exact reset vector and initializes state", CpuResetState);
 Run("emulator publishes frames without console output", EmulatorPublishesFrames);
 Run("unsupported opcodes publish diagnostics", UnsupportedOpcodesPublishDiagnostics);
 Console.WriteLine("All emulator checks passed.");
@@ -478,8 +479,24 @@ static void NromLoads()
     try
     {
         Emulator emulator = new();
+        emulator.A = emulator.X = emulator.Y = 0xFF;
+        emulator.stackPointer = 0;
+        emulator.CPU_Halted = true;
+        emulator.flag_Carry = emulator.flag_Zero = emulator.flag_Decimal = emulator.flag_Overflow = emulator.flag_Negative = true;
+        emulator.flag_InterruptDisable = false;
+        emulator.SetIRQLine(true);
         True(emulator.Reset(path), "NROM load result");
         Equal((ushort)0x8000, emulator.ProgramCounter, "reset vector");
+        Equal((byte)0, emulator.A, "reset A");
+        Equal((byte)0, emulator.X, "reset X");
+        Equal((byte)0, emulator.Y, "reset Y");
+        Equal((byte)0xFD, emulator.stackPointer, "reset stack pointer");
+        True(!emulator.CPU_Halted, "reset clears halt");
+        True(!emulator.flag_Carry && !emulator.flag_Zero && emulator.flag_InterruptDisable &&
+            !emulator.flag_Decimal && !emulator.flag_Overflow && !emulator.flag_Negative,
+            "reset processor flags");
+        True(!emulator.IRQRequested, "reset clears IRQ line state");
+        Equal(7L, emulator.TotalCycles, "reset cycle count");
         Equal((byte)0xEA, emulator.Read(0x8000), "PRG bank mirror");
         SetPpuAddress(emulator, 0x0000);
         emulator.Write(0x2007, 0x5A);
@@ -490,6 +507,33 @@ static void NromLoads()
     finally
     {
         File.Delete(path);
+    }
+}
+
+static void CpuResetState()
+{
+    foreach (ushort vector in new ushort[] { 0x0000, 0xFFFF })
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"yanesmu-reset-{Guid.NewGuid():N}.nes");
+        byte[] rom = new byte[16 + 0x4000];
+        rom[0] = 0x4E;
+        rom[1] = 0x45;
+        rom[2] = 0x53;
+        rom[3] = 0x1A;
+        rom[4] = 1;
+        rom[16 + 0x3FFC] = (byte)vector;
+        rom[16 + 0x3FFD] = (byte)(vector >> 8);
+        File.WriteAllBytes(path, rom);
+        try
+        {
+            Emulator emulator = new();
+            True(emulator.Reset(path), $"ROM with reset vector {vector:X4} loads");
+            Equal(vector, emulator.ProgramCounter, $"exact reset vector {vector:X4}");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }
 
