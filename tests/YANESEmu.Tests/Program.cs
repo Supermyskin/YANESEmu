@@ -5,6 +5,7 @@ using System.Threading;
 Run("CPU executes immediate load and transfer", CpuExecutesLoadAndTransfer);
 Run("CPU run loop honors cancellation after the current instruction", CpuRunStopsOnCancellation);
 Run("CPU recognizes every official NMOS 6502 opcode", CpuRecognizesOfficialOpcodes);
+Run("ADC indirect-indexed timing adds a page-cross cycle", AdcIndirectYPageCrossTiming);
 Run("CPU RAM mirrors every 0x800 bytes", CpuRamMirrors);
 Run("PPU data reads are buffered", PpuDataReadsAreBuffered);
 Run("PPU universal palette entries mirror", PpuPaletteEntriesMirror);
@@ -73,6 +74,21 @@ static void CpuRecognizesOfficialOpcodes()
         True(diagnostic is null, $"official opcode 0x{opcode:X2} is dispatched");
         True(!emulator.CPU_Halted, $"official opcode 0x{opcode:X2} does not halt as unsupported");
     }
+}
+
+static void AdcIndirectYPageCrossTiming()
+{
+    Equal(5, RunAdcIndirectY(0x00FE), "ADC indirect,Y same-page cycles");
+    Equal(6, RunAdcIndirectY(0x00FF), "ADC indirect,Y page-cross cycles");
+}
+
+static int RunAdcIndirectY(ushort baseAddress)
+{
+    Emulator emulator = NewEmulator(0x71, 0x20);
+    emulator.Y = 1;
+    emulator.RAM[0x20] = (byte)baseAddress;
+    emulator.RAM[0x21] = (byte)(baseAddress >> 8);
+    return emulator.Step();
 }
 
 static void CpuRamMirrors()

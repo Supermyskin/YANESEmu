@@ -920,7 +920,7 @@ public partial class Emulator
             case 0x71: // ADC (Indirect),Y
                 ReadOperands_IndirectYAddressed();
                 Op_ADC(Read(addressBus));
-                return FinishStep(5);
+                return FinishStep(5 + (pageCrossed ? 1 : 0));
 
             case 0xF5: // SBC Zero Page,X
                 ReadOperands_ZeroPageXAddressed();
