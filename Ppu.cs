@@ -45,6 +45,7 @@ public partial class Emulator
                     ppuStatus &= 0x7F;
                 byte status = (byte)((ppuStatus & 0xE0) | (ppuRegisters[2] & 0x1F));
                 ppuStatus &= 0x7F;
+                NMIRequested = false;
                 writeLatch = false;
                 return status;
             case 0x2004:

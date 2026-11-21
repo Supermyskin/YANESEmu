@@ -25,6 +25,7 @@ Run("PPU renders 8x16 sprites and reports scanline overflow", PpuRendersTallSpri
 Run("PPU reproduces the diagonal sprite overflow scan", PpuReproducesOverflowBug);
 Run("PPU detects opaque sprite zero overlap", PpuDetectsSpriteZeroHit);
 Run("PPU raises NMI at vblank", PpuRaisesNmiAtVblank);
+Run("reading PPU status clears the vblank NMI line", PpuStatusReadClearsNmi);
 Run("NMI enters through its vector and pushes hardware status", PpuNmiIsServiced);
 Run("IRQ obeys the interrupt mask and preserves the asserted line", IrqIsMaskedAndServiced);
 Run("BRK pushes the software-interrupt status", BrkPushesBreakStatus);
@@ -574,6 +575,16 @@ static void PpuRaisesNmiAtVblank()
     emulator.Write(0x2000, 0x80);
     for (int i = 0; i < 16000 && !emulator.NMIRequested; i++) emulator.Step();
     True(emulator.NMIRequested, "vblank NMI request");
+}
+
+static void PpuStatusReadClearsNmi()
+{
+    Emulator emulator = NewEmulator(0xEA);
+    emulator.Write(0x2000, 0x80);
+    for (int i = 0; i < 16000 && !emulator.NMIRequested; i++) emulator.Step();
+    True(emulator.NMIRequested, "vblank NMI asserted before status read");
+    emulator.Read(0x2002);
+    True(!emulator.NMIRequested, "status read deasserts vblank NMI");
 }
 
 static void PpuNmiIsServiced()
