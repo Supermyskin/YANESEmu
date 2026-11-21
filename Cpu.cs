@@ -1064,7 +1064,8 @@ public partial class Emulator
             case 0x9B: // SHS (TAS) Absolute,Y (unstable unofficial opcode)
                 ReadOperands_AbsoluteYAddressed();
                 stackPointer = (byte)(A & X);
-                byte shsValue = (byte)(stackPointer & ((addressBus >> 8) + 1));
+                ReadIndexedDummy();
+                byte shsValue = (byte)(stackPointer & ((indexedBaseAddress >> 8) + 1));
                 if (pageCrossed)
                     addressBus = (ushort)((shsValue << 8) | (addressBus & 0x00FF));
                 Write(addressBus, shsValue);
@@ -1072,7 +1073,8 @@ public partial class Emulator
 
             case 0x9C: // SHY Absolute,X (unstable unofficial opcode)
                 ReadOperands_AbsoluteXAddressed();
-                byte shyValue = (byte)(Y & ((addressBus >> 8) + 1));
+                ReadIndexedDummy();
+                byte shyValue = (byte)(Y & ((indexedBaseAddress >> 8) + 1));
                 if (pageCrossed)
                     addressBus = (ushort)((shyValue << 8) | (addressBus & 0x00FF));
                 Write(addressBus, shyValue);
@@ -1080,7 +1082,8 @@ public partial class Emulator
 
             case 0x9E: // SHX Absolute,Y (unstable unofficial opcode)
                 ReadOperands_AbsoluteYAddressed();
-                byte shxValue = (byte)(X & ((addressBus >> 8) + 1));
+                ReadIndexedDummy();
+                byte shxValue = (byte)(X & ((indexedBaseAddress >> 8) + 1));
                 if (pageCrossed)
                     addressBus = (ushort)((shxValue << 8) | (addressBus & 0x00FF));
                 Write(addressBus, shxValue);
@@ -1088,7 +1091,8 @@ public partial class Emulator
 
             case 0x9F: // SHA Absolute,Y (unstable unofficial opcode)
                 ReadOperands_AbsoluteYAddressed();
-                byte shaAbsoluteYValue = (byte)(A & X & ((addressBus >> 8) + 1));
+                ReadIndexedDummy();
+                byte shaAbsoluteYValue = (byte)(A & X & ((indexedBaseAddress >> 8) + 1));
                 if (pageCrossed)
                     addressBus = (ushort)((shaAbsoluteYValue << 8) | (addressBus & 0x00FF));
                 Write(addressBus, shaAbsoluteYValue);
@@ -1111,7 +1115,8 @@ public partial class Emulator
                 byte pointerHigh = Read((ushort)((pointer + 1) & 0xFF));
                 ushort baseAddress = (ushort)((pointerHigh << 8) | pointerLow);
                 ushort effectiveAddress = (ushort)(baseAddress + Y);
-                byte shaValue = (byte)(A & X & ((effectiveAddress >> 8) + 1));
+                Read((ushort)((baseAddress & 0xFF00) | (effectiveAddress & 0x00FF)));
+                byte shaValue = (byte)(A & X & ((baseAddress >> 8) + 1));
                 // On a page crossing, the unstable store can replace the high address byte.
                 addressBus = (baseAddress & 0xFF00) != (effectiveAddress & 0xFF00)
                     ? (ushort)((shaValue << 8) | (effectiveAddress & 0x00FF))
