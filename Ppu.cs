@@ -36,14 +36,14 @@ public partial class Emulator
         0xFFFEFF,0xC0DFFF,0xD3D2FF,0xE8C8FF,0xFBC2FF,0xFEC4EA,0xFECCC5,0xF7D8A5,0xE4E594,0xCFEE96,0xBDF4AB,0xB3F3CC,0xB5EBF2,0xB8B8B8,0x000000,0x000000
     };
 
-    private byte ReadPpuRegister(ushort register)
+    private byte ReadPpuRegister(ushort register, byte openBus)
     {
         switch (register)
         {
             case 0x2002:
                 if (ppuScanline == 241 && ppuDot <= 2)
                     ppuStatus &= 0x7F;
-                byte status = (byte)((ppuStatus & 0xE0) | (ppuRegisters[2] & 0x1F));
+                byte status = (byte)((ppuStatus & 0xE0) | (openBus & 0x1F));
                 ppuStatus &= 0x7F;
                 NMIRequested = false;
                 writeLatch = false;
@@ -58,7 +58,7 @@ public partial class Emulator
                 IncrementVramAddress();
                 return result;
             default:
-                return ppuRegisters[register & 7];
+                return openBus;
         }
     }
 

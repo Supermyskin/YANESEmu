@@ -15,6 +15,7 @@ public partial class Emulator
     private bool cpuStepActive;
     private bool dmaTransferActive;
     private int cpuBusCycles;
+    private byte dataBus;
     public bool CPU_Halted;
     public bool IRQRequested { get; private set; }
     public bool flag_Carry, flag_Zero, flag_InterruptDisable, flag_Decimal, flag_Overflow, flag_Negative;
@@ -28,24 +29,29 @@ public partial class Emulator
     public byte Read(ushort addr)
     {
         TickCpuBus();
+        byte value;
         if (addr is 0x4016 or 0x4017)
-            return ReadController(addr - 0x4016);
-        if (addr == 0x4015)
-            return apu.ReadStatus();
-        if (addr < 0x2000)
+            value = ReadController(addr - 0x4016, dataBus);
+        else if (addr == 0x4015)
+            value = (byte)((apu.ReadStatus() & 0x0F) | (dataBus & 0x20));
+        else if (addr < 0x2000)
         {
-            return RAM[addr % 0x800];
+            value = RAM[addr % 0x800];
         }
-        if (addr >= 0x8000)
+        else if (addr >= 0x8000)
         {
             int romIndex = (addr - 0x8000) % ROM.Length;
-            return ROM[romIndex];
+            value = ROM[romIndex];
         }
-        if (addr is >= 0x2000 and < 0x4000)
+        else if (addr is >= 0x2000 and < 0x4000)
         {
-            return ReadPpuRegister((ushort)(0x2000 | (addr & 7)));
+            value = ReadPpuRegister((ushort)(0x2000 | (addr & 7)), dataBus);
         }
-        return 0;
+        else
+            value = dataBus;
+
+        if (addr != 0x4015) dataBus = value;
+        return value;
     }
 
     public ushort ReadWord(ushort addr)
@@ -58,6 +64,7 @@ public partial class Emulator
     public void Write(ushort addr, byte value)
     {
         TickCpuBus();
+        dataBus = value;
         if (addr == 0x4014)
         {
             int start = value << 8;

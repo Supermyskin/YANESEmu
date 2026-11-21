@@ -38,6 +38,8 @@ The current build expects iNES mapper 0 (NROM), with one or two 16 KiB PRG banks
 - PPU register window at `$2000–$3FFF`, mirrored every eight bytes.
 - NROM PRG mapped at `$8000–$FFFF`, including 16 KiB bank mirroring.
 - Reset vector loading, NMI and maskable IRQ entry, and BRK handling.
+- PHP/BRK and hardware interrupt status pushes preserve the 6502 B and unused-bit conventions.
+- CPU data-bus open-bus behavior, indexed dummy reads, and read-modify-write dummy writes for implemented instructions.
 - CPU runs on a background task so the desktop window remains responsive; closing waits for that task to stop.
 - Pause waits for the current instruction batch to reach a safe boundary; single-step runs one instruction while paused or stopped.
 - The core run loop accepts a cancellation token so callers can stop continuous execution.

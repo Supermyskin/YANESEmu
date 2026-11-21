@@ -41,12 +41,12 @@ public partial class Emulator
             controllerShift[i] = (byte)Volatile.Read(ref controllerButtons[i]);
     }
 
-    private byte ReadController(int controller)
+    private byte ReadController(int controller, byte openBus)
     {
         if (controllerStrobe)
-            return (byte)((Volatile.Read(ref controllerButtons[controller]) & 1) | 0x40);
+            return (byte)((openBus & 0xE0) | 0x40 | (Volatile.Read(ref controllerButtons[controller]) & 1));
 
-        byte result = (byte)((controllerShift[controller] & 1) | 0x40);
+        byte result = (byte)((openBus & 0xE0) | 0x40 | (controllerShift[controller] & 1));
         controllerShift[controller] = (byte)((controllerShift[controller] >> 1) | 0x80);
         return result;
     }

@@ -26,6 +26,7 @@ public partial class Emulator
     {
         flag_Carry = (input & 0x01) != 0;
         byte result = (byte)(input >> 1);
+        Write(addr, input);
         Write(addr, result);
         flag_Zero = result == 0;
         flag_Negative = false;
@@ -46,6 +47,7 @@ public partial class Emulator
         ushort baseAddr = ReadWord(ProgramCounter);
         ProgramCounter += 2;
         addressBus = (ushort)(baseAddr + X);
+        indexedBaseAddress = baseAddr;
         pageCrossed = (baseAddr & 0xFF00) != (addressBus & 0xFF00);
     }
 
@@ -54,6 +56,7 @@ public partial class Emulator
         ushort baseAddr = ReadWord(ProgramCounter);
         ProgramCounter += 2;
         addressBus = (ushort)(baseAddr + Y);
+        indexedBaseAddress = baseAddr;
         pageCrossed = (baseAddr & 0xFF00) != (addressBus & 0xFF00);
     }
 
@@ -72,8 +75,12 @@ public partial class Emulator
         byte high = Read((ushort)((zp + 1) & 0xFF));
         ushort baseAddr = (ushort)((high << 8) | low);
         addressBus = (ushort)(baseAddr + Y);
+        indexedBaseAddress = baseAddr;
         pageCrossed = (baseAddr & 0xFF00) != (addressBus & 0xFF00);
     }
+
+    private ushort indexedBaseAddress;
+    private void ReadIndexedDummy() => Read((ushort)((indexedBaseAddress & 0xFF00) | (addressBus & 0x00FF)));
 
     private void SetZeroNegative(byte value)
     {
@@ -84,6 +91,7 @@ public partial class Emulator
     void Op_ASL(ushort Addr, byte Input)
     {
         flag_Carry = Input >= 0x80;
+        Write(Addr, Input);
         Input <<= 1;
         Write(Addr, Input);
         flag_Negative = Input >= 0x80;
@@ -93,6 +101,7 @@ public partial class Emulator
     void Op_ROL(ushort Addr, byte Input)
     {
         bool Futureflag_Carry = Input >= 0x80;
+        Write(Addr, Input);
         Input <<= 1;
         if (flag_Carry)
         {
@@ -107,6 +116,7 @@ public partial class Emulator
     void Op_ROR(ushort addr, byte input)
     {
         futureCarry = (input & 0x01) != 0;
+        Write(addr, input);
         byte result = (byte)(input >> 1);
         if (flag_Carry)
         {
@@ -133,6 +143,7 @@ public partial class Emulator
 
     void Op_INC(ushort Addr, byte Input)
     {
+        Write(Addr, Input);
         Input++;
         Write(Addr, Input);
         flag_Negative = Input >= 0x80;
@@ -141,6 +152,7 @@ public partial class Emulator
 
     void Op_DEC(ushort Addr, byte Input)
     {
+        Write(Addr, Input);
         Input--;
         Write(Addr, Input);
         flag_Negative = Input >= 0x80;
@@ -225,6 +237,7 @@ public partial class Emulator
     {
         byte result = (byte)(input << 1);
         flag_Carry = (input & 0x80) != 0;
+        Write(address, input);
         Write(address, result);
         A |= result;
         SetZeroNegative(A);
@@ -233,6 +246,7 @@ public partial class Emulator
     private void Op_RLA(ushort address, byte input)
     {
         bool nextCarry = (input & 0x80) != 0;
+        Write(address, input);
         byte result = (byte)((input << 1) | (flag_Carry ? 1 : 0));
         Write(address, result);
         flag_Carry = nextCarry;
@@ -244,6 +258,7 @@ public partial class Emulator
     {
         flag_Carry = (input & 1) != 0;
         byte result = (byte)(input >> 1);
+        Write(address, input);
         Write(address, result);
         A ^= result;
         SetZeroNegative(A);
@@ -252,6 +267,7 @@ public partial class Emulator
     private void Op_RRA(ushort address, byte input)
     {
         bool nextCarry = (input & 1) != 0;
+        Write(address, input);
         byte result = (byte)((input >> 1) | (flag_Carry ? 0x80 : 0));
         Write(address, result);
         flag_Carry = nextCarry;
@@ -261,6 +277,7 @@ public partial class Emulator
     private void Op_DCP(ushort address, byte input)
     {
         byte result = (byte)(input - 1);
+        Write(address, input);
         Write(address, result);
         Op_CMP(result);
     }
@@ -268,6 +285,7 @@ public partial class Emulator
     private void Op_ISC(ushort address, byte input)
     {
         byte result = (byte)(input + 1);
+        Write(address, input);
         Write(address, result);
         Op_SBC(result);
     }
@@ -915,12 +933,14 @@ public partial class Emulator
 
             case 0xBD: // LDA Absolute,X
                 ReadOperands_AbsoluteXAddressed();
+                if (pageCrossed) ReadIndexedDummy();
                 A = Read(addressBus);
                 SetZeroNegative(A);
                 return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0xB9: // LDA Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
+                if (pageCrossed) ReadIndexedDummy();
                 A = Read(addressBus);
                 SetZeroNegative(A);
                 return FinishStep(4 + (pageCrossed ? 1 : 0));
@@ -939,6 +959,7 @@ public partial class Emulator
 
             case 0xB1: // LDA (Indirect),Y
                 ReadOperands_IndirectYAddressed();
+                if (pageCrossed) ReadIndexedDummy();
                 A = Read(addressBus);
                 SetZeroNegative(A);
                 return FinishStep(5 + (pageCrossed ? 1 : 0));
@@ -1022,17 +1043,21 @@ public partial class Emulator
                 return FinishStep(4 + (pageCrossed ? 1 : 0));
 
             case 0x95: // STA Zero Page,X
-                ReadOperands_ZeroPageXAddressed();
+                byte staZeroPage = Read(ProgramCounter++);
+                Read(staZeroPage);
+                addressBus = (ushort)((staZeroPage + X) & 0xFF);
                 Write(addressBus, A);
                 return FinishStep(4);
 
             case 0x9D: // STA Absolute,X
                 ReadOperands_AbsoluteXAddressed();
+                ReadIndexedDummy();
                 Write(addressBus, A);
                 return FinishStep(5);
 
             case 0x99: // STA Absolute,Y
                 ReadOperands_AbsoluteYAddressed();
+                ReadIndexedDummy();
                 Write(addressBus, A);
                 return FinishStep(5);
 
@@ -1076,6 +1101,7 @@ public partial class Emulator
 
             case 0x91: // STA (Indirect),Y
                 ReadOperands_IndirectYAddressed();
+                ReadIndexedDummy();
                 Write(addressBus, A);
                 return FinishStep(6);
 
