@@ -11,7 +11,7 @@ using Avalonia.Input;
 internal sealed class ControllerSettingsWindow : Window
 {
     private static readonly Key[] AvailableKeys = Enum.GetValues<Key>()
-        .Where(key => key != Key.None && key is not (Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl
+        .Where(key => key != Key.None && key is not (Key.LeftCtrl or Key.RightCtrl
             or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin))
         .ToArray();
     private readonly Dictionary<ControllerButton, ComboBox> selectors = new();

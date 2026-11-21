@@ -67,6 +67,7 @@ internal sealed class MainWindow : Window
         MinHeight = 420;
         Background = new SolidColorBrush(Color.Parse("#171717"));
         Focusable = true;
+        Opened += (_, _) => Focus();
         KeyDown += HandleControllerKeyDown;
         KeyUp += HandleControllerKeyUp;
 
@@ -392,6 +393,7 @@ internal sealed class MainWindow : Window
             }
 
             currentRomPath = path;
+            Focus();
             Title = $"YANESEmu — {Path.GetFileName(path)}";
             isPaused = false;
             SetPauseMenuHeader("Pause");
